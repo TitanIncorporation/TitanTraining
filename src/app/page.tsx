@@ -324,7 +324,7 @@ function Dashboard({
         />
         <StatCard
           label="Fitness level"
-          value={profile.fitnessLevel || profile.experienceLevel || "—"}
+          value={String(profile.fitnessLevel || profile.experienceLevel || "—")}
           sub={`${profile.sports.length} sports`}
         />
       </div>
@@ -397,13 +397,14 @@ function StatCard({
   sub,
 }: {
   label: string;
-  value: string;
+  value: string | number | undefined;
   sub?: string;
 }) {
+  const display = value === undefined || value === null ? "—" : String(value);
   return (
     <div className="bg-card border border-border rounded-xl p-4">
       <p className="text-xs text-muted uppercase tracking-wide">{label}</p>
-      <p className="text-xl font-semibold mt-1 truncate capitalize">{value}</p>
+      <p className="text-xl font-semibold mt-1 truncate capitalize">{display}</p>
       {sub && <p className="text-xs text-muted mt-0.5 truncate">{sub}</p>}
     </div>
   );
