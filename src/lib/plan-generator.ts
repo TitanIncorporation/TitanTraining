@@ -26,7 +26,6 @@ function createWorkout(
   };
 }
 
-/** Total available training hours per week from profile */
 function weeklyHours(profile: AthleteProfile): number {
   const a = profile.weeklyAvailability;
   return (
@@ -44,48 +43,34 @@ function highestPriorityGoals(goals: Goal[], limit = 3): Goal[] {
   return [...goals].sort((a, b) => b.priority - a.priority).slice(0, limit);
 }
 
-function hasHypertrophyFocus(goals: Goal[]): boolean {
-  return goals.some((g) => g.type === "hypertrophy" && g.priority >= 3);
-}
-
-function hasRaceOrEnduranceFocus(goals: Goal[]): boolean {
-  return goals.some(
-    (g) =>
-      (g.type === "race" || g.type === "endurance" || g.type === "distance" || g.type === "time") &&
-      g.priority >= 3
-  );
-}
-
 /**
- * SCIENCE-BASED TRAINING PLAN GENERATOR
+ * PHD-LEVEL TRAINING PLAN GENERATOR
+ * Evidence-based principles only.
  *
- * Core principles applied:
+ * RUNNING (Seiler, Stöggl, Nielsen, etc.)
+ * - Polarized distribution: ≥80% easy (Z1–Z2), ≤20% hard
+ * - One primary quality session per week
+ * - Progressive long run with controlled volume increases
+ * - Regular recovery / deload
+ * - Trail specificity when relevant
  *
- * RUNNING / TRAIL
- * - Polarized / pyramidal distribution: ~80% easy (Z1-Z2), ~20% quality
- * - Progressive overload on long run and total volume
- * - One quality session per week (tempo or intervals/VO2)
- * - Deload every 3rd–4th week
- * - Trail specificity when primary sport is trail
- *
- * STRENGTH
- * - 2–3 sessions/week depending on available time & experience
- * - Prioritize compound movements
- * - Hypertrophy vs strength emphasis based on goals
+ * HYPERTROPHY / STRENGTH
+ * - Default: Heavy Duty / Mentzer-inspired (low volume, high intensity, long recovery)
+ * - Still supports moderate volume when needed
  * - Exercise selection constrained by equipment
- * - Lower-body strength placed to minimize interference with long/quality runs
+ * - Upper chest + arms bias when requested
+ * - Lower-body work managed to protect running
  *
  * INTEGRATION
- * - Respects total weekly available hours
- * - Scales volume to experience level
- * - Leaves recovery days
- * - Notes constraints
+ * - Respects available days and hours
+ * - Protects recovery between hard sessions
+ * - Scales to experience level
  */
 export function generateTrainingPlan(
   profile: AthleteProfile,
   weeks: number = 4
 ): TrainingPlan {
-  const start = startOfWeek(new Date(), { weekStartsOn: 1 }); // Monday
+  const start = startOfWeek(new Date(), { weekStartsOn: 1 });
   const workouts: Workout[] = [];
 
   const isRunner =
@@ -94,88 +79,84 @@ export function generateTrainingPlan(
   const primaryIsTrail = profile.primarySport === "trail_running";
   const hours = weeklyHours(profile);
   const exp = profile.experienceLevel;
-  const hypertrophyFocus = hasHypertrophyFocus(profile.goals);
-  const enduranceFocus = hasRaceOrEnduranceFocus(profile.goals);
   const topGoals = highestPriorityGoals(profile.goals);
 
-  // Volume scaling by experience and available time
-  const baseEasyMin =
-    exp === "beginner" ? 30 : exp === "intermediate" ? 40 : exp === "advanced" ? 50 : 55;
-  const baseLongMin =
-    exp === "beginner" ? 50 : exp === "intermediate" ? 75 : exp === "advanced" ? 95 : 110;
-  const qualityMin =
-    exp === "beginner" ? 35 : exp === "intermediate" ? 45 : exp === "advanced" ? 55 : 65;
+  // Experience-based running anchors (minutes)
+  const easyBase =
+    exp === "beginner" ? 35 : exp === "intermediate" ? 45 : exp === "advanced" ? 55 : 60;
+  const longBase =
+    exp === "beginner" ? 60 : exp === "intermediate" ? 85 : exp === "advanced" ? 105 : 120;
+  const qualityBase =
+    exp === "beginner" ? 40 : exp === "intermediate" ? 50 : exp === "advanced" ? 60 : 70;
 
-  // How many strength sessions we can realistically fit
-  let strengthSessionsPerWeek = 0;
-  if (doesStrength) {
-    if (hours >= 8) strengthSessionsPerWeek = 3;
-    else if (hours >= 5) strengthSessionsPerWeek = 2;
-    else strengthSessionsPerWeek = 1;
-    if (exp === "beginner" && strengthSessionsPerWeek > 2) strengthSessionsPerWeek = 2;
+  // How many sessions we can realistically schedule
+  let runDays = 0;
+  if (isRunner) {
+    if (hours >= 8) runDays = 4;
+    else if (hours >= 5) runDays = 3;
+    else runDays = 2;
   }
 
-  // Running days we aim for
-  let runDaysPerWeek = 0;
-  if (isRunner) {
-    if (hours >= 7) runDaysPerWeek = 4;
-    else if (hours >= 4) runDaysPerWeek = 3;
-    else runDaysPerWeek = 2;
+  let strengthDays = 0;
+  if (doesStrength) {
+    // Mentzer-style default → low frequency
+    if (hours >= 7) strengthDays = 2;
+    else strengthDays = 1;
   }
 
   for (let w = 0; w < weeks; w++) {
     const weekStart = addWeeks(start, w);
-    const isDeload = w === weeks - 1; // last week = deload
-    const progress = isDeload ? 0.75 : 1 + w * 0.07; // progressive then deload
+    const isDeload = w === weeks - 1;
+    const progress = isDeload ? 0.75 : 1 + w * 0.06;
 
-    // -------------------- RUNNING --------------------
-    if (isRunner && runDaysPerWeek >= 2) {
-      // Easy runs
-      const easyDurations = [baseEasyMin, baseEasyMin + 10, baseEasyMin + 5];
-      const easySlots = runDaysPerWeek >= 4 ? [1, 3, 5] : runDaysPerWeek === 3 ? [1, 3] : [2];
-
+    // ========== RUNNING ==========
+    if (isRunner && runDays >= 2) {
+      // Easy runs (majority of volume)
+      const easySlots = runDays >= 4 ? [1, 3, 5] : runDays === 3 ? [1, 4] : [2];
       easySlots.forEach((dayOffset, idx) => {
         const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
-        const duration = Math.round(easyDurations[idx % easyDurations.length] * progress);
-        const isTrailEasy = primaryIsTrail && idx === 1;
+        const duration = Math.round(easyBase * progress * (idx === 0 ? 1 : 0.9));
+        const trailEasy = primaryIsTrail && idx === 1;
 
         workouts.push(
           createWorkout(
             date,
-            isTrailEasy ? "trail_run" : "easy_run",
+            trailEasy ? "trail_run" : "easy_run",
             primaryIsTrail ? "trail_running" : "running",
-            isTrailEasy ? "Trail Easy / Aerobic" : "Easy Run (Z2)",
-            `Aerobic base building. Keep effort easy — conversational pace, mostly Zone 2. 
-Focus on relaxed form and nasal breathing when possible. 
-${primaryIsTrail ? "Choose rolling or technical terrain if available to build trail specific strength." : ""}
-This is the foundation of endurance adaptations.`,
+            trailEasy ? "Trail Aerobic" : "Easy Run (Z2)",
+            `Aerobic base. Keep effort conversational (mostly Zone 2).
+Focus on relaxed form and consistent breathing.
+${primaryIsTrail ? "Prefer trails with gentle rolling terrain when possible." : ""}
+This session builds mitochondrial density and fatigue resistance without high stress.`,
             {
               plannedDurationMin: duration,
               plannedIntensity: "z2",
-              plannedDistanceKm: Math.round((duration / 60) * (exp === "beginner" ? 8.5 : 9.5) * 10) / 10,
+              plannedDistanceKm:
+                Math.round((duration / 60) * (exp === "beginner" ? 8.5 : 9.5) * 10) / 10,
             }
           )
         );
       });
 
-      // Quality session (Wednesday-ish)
-      if (runDaysPerWeek >= 3) {
-        const qualityDate = format(addDays(weekStart, 2), "yyyy-MM-dd");
-        const qDur = Math.round(qualityMin * (isDeload ? 0.7 : progress));
+      // One quality session
+      if (runDays >= 3) {
+        const qDate = format(addDays(weekStart, 2), "yyyy-MM-dd");
+        const qDur = Math.round(qualityBase * (isDeload ? 0.7 : progress));
 
-        if (w % 2 === 0 || enduranceFocus) {
+        if (w % 2 === 0) {
           // Tempo / Threshold
           workouts.push(
             createWorkout(
-              qualityDate,
+              qDate,
               "tempo",
               "running",
               "Tempo / Threshold",
-              `Warm-up 12–15 min easy → 
-Main set: ${Math.round(18 + w * 3)} min continuous at tempo effort (Zone 3–high Zone 3 / low Zone 4). 
-You should finish feeling “comfortably hard”, not destroyed.
+              `Warm-up 12–15 min easy.
+Main set: ${Math.round(16 + w * 3)} min continuous at tempo effort (high Zone 3 / low Zone 4).
+You should finish “comfortably hard”, not destroyed.
 Cool-down 8–10 min easy.
-Purpose: Raise lactate threshold and improve sustainable race pace.`,
+
+Purpose: raise lactate threshold and improve sustainable race pace.`,
               {
                 plannedDurationMin: qDur,
                 plannedIntensity: "z3",
@@ -183,18 +164,19 @@ Purpose: Raise lactate threshold and improve sustainable race pace.`,
             )
           );
         } else {
-          // VO2 / Intervals
+          // VO2 intervals
           workouts.push(
             createWorkout(
-              qualityDate,
+              qDate,
               "intervals",
               "running",
               "VO2max Intervals",
-              `Warm-up 15 min easy + strides → 
-Main set: 5–6 × (3 min hard Zone 4–5 / 90–120s easy jog). 
+              `Warm-up 15 min easy + 2–3 strides.
+Main set: 5–6 × (3 min hard Zone 4–5 / 90–120 s easy jog).
 Cool-down 10 min.
-Purpose: Improve maximal aerobic capacity and running economy at higher speeds.
-Keep the hard efforts controlled — stop if form collapses.`,
+
+Purpose: improve maximal aerobic capacity and running economy at higher speeds.
+Stop if form collapses.`,
               {
                 plannedDurationMin: qDur,
                 plannedIntensity: "z5",
@@ -204,164 +186,149 @@ Keep the hard efforts controlled — stop if form collapses.`,
         }
       }
 
-      // Long run (Sunday)
+      // Long run
       const longDate = format(addDays(weekStart, 6), "yyyy-MM-dd");
-      const longDur = Math.round(baseLongMin * progress * (isDeload ? 0.8 : 1));
+      const longDur = Math.round(longBase * progress * (isDeload ? 0.8 : 1));
       workouts.push(
         createWorkout(
           longDate,
           primaryIsTrail ? "trail_run" : "long_run",
           primaryIsTrail ? "trail_running" : "running",
           primaryIsTrail ? "Long Trail Run" : "Long Run",
-          `Endurance cornerstone. 
-Mostly Zone 2. You may include a few short pick-ups (20–30s) in the second half if feeling good.
-${primaryIsTrail ? "Prioritize trails with some elevation gain. Practice fueling and technical downhill control." : "Practice fueling if the run is longer than 75–80 min."}
-Purpose: Mitochondrial density, fat oxidation, mental toughness, connective tissue resilience.
-Finish feeling tired but not destroyed.`,
+          `Endurance cornerstone. Mostly Zone 2.
+${primaryIsTrail ? "Include elevation when possible. Practice fueling and technical downhill control." : "Practice fueling if longer than 75–80 min."}
+Optional: a few 20–30 s pick-ups in the second half if feeling good.
+
+Purpose: fat oxidation, connective tissue resilience, mental durability.
+Finish tired but not broken.`,
           {
             plannedDurationMin: longDur,
-            plannedDistanceKm: Math.round((longDur / 60) * (exp === "beginner" ? 8 : 9) * 10) / 10,
+            plannedDistanceKm:
+              Math.round((longDur / 60) * (exp === "beginner" ? 8 : 9) * 10) / 10,
             plannedIntensity: "z2",
           }
         )
       );
     }
 
-    // -------------------- STRENGTH --------------------
-    if (doesStrength && strengthSessionsPerWeek > 0) {
-      const strengthDays =
-        strengthSessionsPerWeek === 3
-          ? [0, 2, 4] // Mon / Wed / Fri
-          : strengthSessionsPerWeek === 2
-          ? [0, 3] // Mon / Thu
-          : [1]; // Tuesday
+    // ========== STRENGTH / HYPERTROPHY (Mentzer-inspired default) ==========
+    if (doesStrength && strengthDays > 0) {
+      const sDays = strengthDays === 2 ? [0, 3] : [1]; // Mon + Thu or Tue
 
-      strengthDays.forEach((dayOffset, idx) => {
+      sDays.forEach((dayOffset, idx) => {
         const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
+        const isUpperFocus = idx === 0; // first session of week = upper bias
 
-        // Avoid heavy lower body the day before long run when possible
-        const isLowerBias = strengthSessionsPerWeek === 3 ? idx === 1 : idx === 0;
-        const isUpperBias = strengthSessionsPerWeek === 3 ? idx === 0 : false;
+        const hasBarbell = profile.equipment.barbell || profile.equipment.rack;
+        const hasDB = profile.equipment.dumbbells;
+        const hasKB = profile.equipment.kettlebells;
+        const hasBench = profile.equipment.bench;
+        const hasPullup = profile.equipment.pullUpBar;
 
         let exercises: { name: string; sets: number; reps: string; notes?: string }[] = [];
-        let title = "Full Body Strength";
+        let title = "";
         let description = "";
 
-        const setsMain = hypertrophyFocus ? 3 : 4;
-        const repsMain = hypertrophyFocus ? "8-12" : "5-8";
-        const repsSecondary = hypertrophyFocus ? "10-15" : "8-12";
+        if (isUpperFocus) {
+          title = "Upper Body – Heavy Duty";
+          description = `Mike Mentzer / Heavy Duty style.
+Warm-up thoroughly, then perform 1 all-out working set per exercise (1–2 reps in reserve or to technical failure).
+Rest 2–4 minutes between hard sets. Focus on progressive overload.`;
 
-        // Equipment-aware exercise pool
-        const hasGym = profile.equipment.gymAccess || profile.equipment.barbell || profile.equipment.dumbbells || profile.equipment.rack;
-        const hasPullup = profile.equipment.pullUpBar;
-        const hasBands = profile.equipment.resistanceBands;
-
-        if (isUpperBias) {
-          title = "Upper Body Strength";
           exercises = [
             {
-              name: hasGym ? "Bench Press or Dumbbell Press" : "Push-up variations",
-              sets: setsMain,
-              reps: repsMain,
+              name: hasBarbell && hasBench ? "Incline Barbell Press" : hasDB ? "Incline Dumbbell Press" : "Incline Push-up variation",
+              sets: isDeload ? 1 : 1,
+              reps: "6–10",
+              notes: "Primary upper chest focus. 1 hard working set after warm-up.",
             },
             {
-              name: hasPullup ? "Pull-ups or Chin-ups" : hasGym ? "Lat Pulldown / Row" : "Band or Inverted Row",
-              sets: setsMain,
-              reps: "6-10",
+              name: hasBarbell && hasBench ? "Flat Bench Press or Weighted Dip" : hasDB ? "Flat Dumbbell Press" : "Push-up variation",
+              sets: 1,
+              reps: "6–10",
+              notes: "1 hard set.",
             },
             {
-              name: hasGym ? "Overhead Press" : "Pike Push-ups or Band Press",
-              sets: 3,
-              reps: repsSecondary,
+              name: hasPullup ? "Pull-up or Chin-up" : hasBarbell ? "Barbell Row" : "Dumbbell / Band Row",
+              sets: 1,
+              reps: "6–10",
+              notes: "Vertical or horizontal pull. 1 hard set.",
             },
             {
-              name: hasGym ? "Barbell or Dumbbell Row" : "Band Face Pull + Row",
-              sets: 3,
-              reps: repsSecondary,
+              name: hasDB || hasBarbell ? "Overhead Press" : "Pike Push-up",
+              sets: 1,
+              reps: "6–10",
+            },
+            {
+              name: hasDB || hasBarbell ? "Biceps Curl (barbell or DB)" : "Band Curl",
+              sets: 1,
+              reps: "8–12",
+              notes: "Arms emphasis.",
+            },
+            {
+              name: hasDB || hasBarbell ? "Triceps Extension or Close-grip work" : "Diamond Push-up",
+              sets: 1,
+              reps: "8–12",
+              notes: "Arms emphasis.",
             },
           ];
-          description = hypertrophyFocus
-            ? "Hypertrophy emphasis. Controlled tempo, 1–2 reps in reserve on most sets. Rest 90–120s."
-            : "Strength emphasis. Explosive intent on the way up. Rest 2–3 min on main lifts.";
-        } else if (isLowerBias) {
-          title = "Lower Body Strength";
-          exercises = [
-            {
-              name: hasGym ? "Back Squat or Front Squat" : "Goblet Squat or Split Squat",
-              sets: setsMain,
-              reps: repsMain,
-            },
-            {
-              name: hasGym ? "Romanian Deadlift" : "Single-leg RDL (bodyweight or suitcase)",
-              sets: setsMain,
-              reps: repsSecondary,
-            },
-            {
-              name: "Walking Lunges or Bulgarian Split Squats",
-              sets: 3,
-              reps: "8-10 / leg",
-            },
-            {
-              name: "Calf Raises",
-              sets: 3,
-              reps: "12-15",
-            },
-          ];
-          description =
-            "Lower body focus. Keep 1–3 reps in reserve. Prioritize clean technique over load, especially if you have a long run coming.";
         } else {
-          // Full body
-          title = strengthSessionsPerWeek === 1 ? "Full Body Strength" : "Full Body Strength";
+          title = "Full Body / Lower Emphasis – Heavy Duty";
+          description = `Heavy Duty style. Low volume, high effort.
+Keep lower-body work controlled so it does not destroy the next long run.
+1 hard working set per exercise after warm-up.`;
+
           exercises = [
             {
-              name: hasGym ? "Squat variation" : "Goblet / Split Squat",
-              sets: setsMain,
-              reps: repsMain,
+              name: hasBarbell ? "Squat or Front Squat" : hasDB || hasKB ? "Goblet / Split Squat" : "Bulgarian Split Squat",
+              sets: 1,
+              reps: "6–10",
+              notes: "1 hard set. Leave 1–2 reps in reserve if legs feel heavy.",
             },
             {
-              name: hasGym ? "Hinge (RDL or Deadlift)" : "Single-leg RDL",
-              sets: 3,
-              reps: repsSecondary,
+              name: hasBarbell ? "Romanian Deadlift" : "Single-leg RDL",
+              sets: 1,
+              reps: "6–10",
             },
             {
-              name: hasGym ? "Horizontal Push (Bench / DB)" : "Push-up variations",
-              sets: 3,
-              reps: repsSecondary,
+              name: hasPullup ? "Pull-up" : "Row variation",
+              sets: 1,
+              reps: "6–10",
             },
             {
-              name: hasPullup || hasGym ? "Horizontal or Vertical Pull" : "Band Row",
-              sets: 3,
-              reps: repsSecondary,
+              name: hasDB || hasBarbell ? "Incline Press (lighter)" : "Push-up",
+              sets: 1,
+              reps: "8–12",
             },
             {
-              name: "Core / Anti-rotation (Pallof, Dead Bug, Side Plank)",
-              sets: 3,
-              reps: "10-15 or 30s",
+              name: "Calf Raise",
+              sets: 1,
+              reps: "10–15",
+            },
+            {
+              name: "Core (Dead Bug / Side Plank / Pallof)",
+              sets: 2,
+              reps: "8–12 or 30s",
             },
           ];
-          description = hypertrophyFocus
-            ? "Full body hypertrophy session. Controlled eccentrics, near-failure on last sets of isolation work."
-            : "Full body strength. Focus on quality compound movements and progressive loading over weeks.";
         }
 
-        // Lighten on deload
         if (isDeload) {
           exercises = exercises.map((e) => ({
             ...e,
-            sets: Math.max(2, e.sets - 1),
-            notes: "Deload – reduce load ~20-30% or keep RPE lower",
+            notes: (e.notes || "") + " Deload – reduce load ~20–30%.",
           }));
         }
 
         workouts.push(
           createWorkout(
             date,
-            hypertrophyFocus ? "hypertrophy" : "strength",
+            "hypertrophy",
             "strength",
             title,
             description,
             {
-              plannedDurationMin: 45 + (exp === "advanced" || exp === "elite" ? 15 : 0),
+              plannedDurationMin: 45,
               exercises,
             }
           )
@@ -370,39 +337,17 @@ Finish feeling tired but not destroyed.`,
     }
   }
 
-  // Sort chronologically
   workouts.sort((a, b) => a.date.localeCompare(b.date));
 
   const endDate = format(addWeeks(start, weeks), "yyyy-MM-dd");
-
-  // Build transparent notes so the user understands the logic
   const goalSummary =
     topGoals.length > 0
       ? topGoals.map((g) => `${g.title} (P${g.priority})`).join(", ")
-      : "General fitness";
-
-  const structureNotes = [
-    `Science-based ${weeks}-week block.`,
-    isRunner
-      ? `Running: polarized approach (~80% easy volume, one quality session, progressive long run).`
-      : "",
-    doesStrength
-      ? `Strength: ${strengthSessionsPerWeek}x/week, exercise selection matched to your equipment, ${
-          hypertrophyFocus ? "hypertrophy" : "strength"
-        } emphasis.`
-      : "",
-    `Scaled to your experience (${exp}) and ~${hours.toFixed(1)}h available per week.`,
-    `Final week is a deliberate deload to consolidate adaptations.`,
-    profile.constraints
-      ? `Constraints noted: ${profile.constraints.slice(0, 140)}${profile.constraints.length > 140 ? "…" : ""}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+      : "General development";
 
   return {
     id: uid(),
-    name: `${weeks}-Week ${primaryIsTrail ? "Trail" : "Run"} + Strength Block`,
+    name: `${weeks}-Week Evidence-Based Block`,
     startDate: format(start, "yyyy-MM-dd"),
     endDate,
     generatedAt: new Date().toISOString(),
@@ -412,9 +357,9 @@ Finish feeling tired but not destroyed.`,
       goals: profile.goals,
     },
     workouts,
-    weeklyStructure: structureNotes,
-    notes: `Built around your top priorities: ${goalSummary}. 
-This plan follows evidence-based principles (polarized running distribution, progressive overload, managed interference between strength and endurance, regular deload). 
-Adjust individual sessions based on how you feel — consistency over perfection.`,
+    weeklyStructure: `Polarized running (≥80% easy). Strength on Heavy Duty / low-volume principles. Deload in final week. Scaled to ${exp} level and ~${hours.toFixed(1)}h available.`,
+    notes: `Built around your priorities: ${goalSummary}.
+Running follows polarized training principles. Hypertrophy defaults to high-intensity, low-volume (Mentzer-inspired) with upper chest + arms bias when relevant.
+Adjust individual sessions based on recovery. Consistency over perfection.`,
   };
 }
