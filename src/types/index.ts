@@ -22,13 +22,10 @@ export type GoalType =
   | "custom";
 
 export type TrainingApproach =
-  | "mentzer"
+  | "heavy_duty"
   | "strength"
   | "hypertrophy"
-  | "hiit"
   | "functional"
-  | "moderate"
-  | "higher_volume"
   | "custom";
 
 export interface Goal {
@@ -105,12 +102,15 @@ export interface StrengthBaseline {
 
 export interface AthleteProfile {
   name: string;
-  fitnessLevel: "beginner" | "intermediate" | "advanced" | "elite"; // overall current fitness
+  age?: number;
+  gender?: "male" | "female" | "other" | "prefer_not";
+  fitnessLevel: "beginner" | "intermediate" | "advanced" | "elite";
   sports: Sport[];
-  sportPriorities: { sport: Sport; priority: number }[]; // 1 = top, 2 = second
+  sportPriorities: { sport: Sport; priority: number }[];
   primarySport: Sport;
   secondarySport?: Sport;
-  customSports?: string;
+  customSportsList?: string[]; // submitted custom sports
+  trainingDaysPerWeek?: number;
   goals: Goal[];
   hrZones: HRZones;
   equipment: Equipment;
@@ -129,7 +129,6 @@ export interface AthleteProfile {
   notes: string;
   createdAt: string;
   updatedAt: string;
-  // keep for backward compat
   experienceLevel: "beginner" | "intermediate" | "advanced" | "elite";
 }
 

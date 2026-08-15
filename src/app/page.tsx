@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   AthleteProfile,
   TrainingPlan,
@@ -324,13 +324,7 @@ function Dashboard({
         />
         <StatCard
           label="Fitness level"
-          value={
-            (profile as any).fitnessLevel
-              ? String((profile as any).fitnessLevel)
-              : profile.experienceLevel
-                ? String(profile.experienceLevel)
-                : "—"
-          }
+          value={((profile as any).fitnessLevel || profile.experienceLevel || "—") as string}
           sub={`${profile.sports.length} sports`}
         />
       </div>
@@ -427,6 +421,8 @@ function ProfileEditor({
   const [form, setForm] = useState<AthleteProfile>(
     profile || ({
       name: "",
+      age: 35,
+      gender: "prefer_not",
       fitnessLevel: "intermediate",
       experienceLevel: "intermediate",
       sports: ["running", "strength"],
@@ -436,7 +432,8 @@ function ProfileEditor({
       ],
       primarySport: "running",
       secondarySport: "strength",
-      customSports: "",
+      customSportsList: [],
+      trainingDaysPerWeek: 5,
       goals: [],
       hrZones: defaultHRZones(),
       equipment: defaultEquipment,
@@ -457,7 +454,7 @@ function ProfileEditor({
       },
       strengthBaseline: {
         experience: "intermediate",
-        trainingApproaches: ["mentzer", "hypertrophy"],
+        trainingApproaches: ["heavy_duty", "hypertrophy"],
         trainingApproachOther: "",
         physiquePriorities: ["general"],
         physiqueOther: "",
@@ -471,17 +468,78 @@ function ProfileEditor({
   );
 
   const [newGoalTitle, setNewGoalTitle] = useState("");
+  const [newGoalType, setNewGoalType] = useState<string>("race");
+  const [newGoalDate, setNewGoalDate] = useState("");
+  const [newGoalDistance, setNewGoalDistance] = useState("");
+  const [newGoalPriority, setNewGoalPriority] = useState(5);
+  const [customSportInput, setCustomSportInput] = useState("");
+  const [approachOtherInput, setApproachOtherInput] = useState("");
+  const [physiqueOtherInput, setPhysiqueOtherInput] = useState("");
+  const [equipmentOtherInput, setEquipmentOtherInput] = useState("");
 
   const addGoal = () => {
     if (!newGoalTitle.trim()) return;
     const goal: Goal = {
       id: Math.random().toString(36).slice(2),
-      type: "custom",
+      type: (newGoalType as any) || "custom",
       title: newGoalTitle.trim(),
-      priority: 3,
+      priority: newGoalPriority as 1 | 2 | 3 | 4 | 5,
+      targetDate: newGoalDate || undefined,
+      metrics: newGoalDistance
+        ? { distanceKm: Number(newGoalDistance) || undefined }
+        : undefined,
     };
     setForm({ ...form, goals: [...form.goals, goal] });
     setNewGoalTitle("");
+    setNewGoalDate("");
+    setNewGoalDistance("");
+  };
+
+  const addCustomSport = () => {
+    const v = customSportInput.trim();
+    if (!v) return;
+    const list = [...((form as any).customSportsList || [])];
+    if (!list.includes(v)) list.push(v);
+    setForm({ ...form, customSportsList: list } as any);
+    setCustomSportInput("");
+  };
+
+  const addApproachOther = () => {
+    const v = approachOtherInput.trim();
+    if (!v) return;
+    setForm({
+      ...form,
+      strengthBaseline: {
+        ...((form as any).strengthBaseline || {}),
+        trainingApproachOther: v,
+      },
+    } as any);
+    setApproachOtherInput("");
+  };
+
+  const addPhysiqueOther = () => {
+    const v = physiqueOtherInput.trim();
+    if (!v) return;
+    const current = (form as any).strengthBaseline?.physiquePriorities || [];
+    const next = current.includes(v) ? current : [...current, v];
+    setForm({
+      ...form,
+      strengthBaseline: {
+        ...((form as any).strengthBaseline || {}),
+        physiquePriorities: next,
+        physiqueOther: v,
+      },
+    } as any);
+    setPhysiqueOtherInput("");
+  };
+
+  const addEquipmentOther = () => {
+    const v = equipmentOtherInput.trim();
+    if (!v) return;
+    const other = [...(form.equipment.other || [])];
+    if (!other.includes(v)) other.push(v);
+    setForm({ ...form, equipment: { ...form.equipment, other } });
+    setEquipmentOtherInput("");
   };
 
   const handleSave = () => {
@@ -492,205 +550,325 @@ function ProfileEditor({
     });
   };
 
+  const Section = ({
+    title,
+    children,
+    defaultOpen = true,
+  }: {
+    title: string;
+    children: React.ReactNode;
+    defaultOpen?: boolean;
+  }) => (
+    <details
+      className="bg-card border border-border rounded-xl overflow-hidden"
+      open={defaultOpen}
+    >
+      <summary className="px-4 py-3 font-medium text-sm uppercase tracking-wide cursor-pointer select-none hover:bg-card-hover list-none flex items-center justify-between">
+        <span>{title}</span>
+        <span className="text-muted text-xs">tap to expand/collapse</span>
+      </summary>
+      <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">{children}</div>
+    </details>
+  );
+
   return (
-    <div className="space-y-8 max-w-2xl">
+    <div className="space-y-4 max-w-2xl">
       <div>
         <h2 className="text-2xl font-semibold">Athlete Profile</h2>
-        <p className="text-muted mt-1">This data drives the training plan generator.</p>
+        <p className="text-muted mt-1">Everything here conditions the training plans.</p>
       </div>
 
-      {/* Baseline – General */}
-      <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Baseline – General</h3>
-        <div className="grid gap-4">
+      {/* ========== GENERAL ========== */}
+      <Section title="Baseline – General">
+        <div className="grid grid-cols-2 gap-4">
           <label className="block">
-            <span className="text-sm mb-1 block">Current fitness level</span>
-            <select
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-              value={(form as any).fitnessLevel || form.experienceLevel || "intermediate"}
+            <span className="text-sm mb-1 block">Age</span>
+            <input
+              type="number"
+              min={12}
+              max={90}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={(form as any).age ?? ""}
               onChange={(e) =>
-                setForm({
-                  ...form,
-                  fitnessLevel: e.target.value,
-                  experienceLevel: e.target.value,
-                } as AthleteProfile)
+                setForm({ ...form, age: Number(e.target.value) || undefined } as any)
               }
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm mb-1 block">Gender</span>
+            <select
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={(form as any).gender || "prefer_not"}
+              onChange={(e) => setForm({ ...form, gender: e.target.value } as any)}
             >
-              <option value="beginner">Beginner</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
-              <option value="elite">Elite</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+              <option value="prefer_not">Prefer not to say</option>
             </select>
           </label>
+        </div>
 
-          <div>
-            <span className="text-sm mb-2 block">Sports to train</span>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                ["running", "Road Running"],
-                ["trail_running", "Trail Running"],
-                ["strength", "Strength / Hypertrophy"],
-                ["conditioning", "Conditioning"],
-                ["cycling", "Cycling"],
-                ["triathlon", "Triathlon"],
-              ].map(([value, label]) => (
-                <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.sports.includes(value as any)}
-                    onChange={(e) => {
-                      const sports = e.target.checked
-                        ? [...form.sports, value as any]
-                        : form.sports.filter((s) => s !== value);
+        <label className="block">
+          <span className="text-sm mb-1 block">Current fitness level</span>
+          <select
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            value={(form as any).fitnessLevel || form.experienceLevel || "intermediate"}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                fitnessLevel: e.target.value,
+                experienceLevel: e.target.value,
+              } as AthleteProfile)
+            }
+          >
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+            <option value="elite">Elite</option>
+          </select>
+        </label>
+
+        <div>
+          <span className="text-sm mb-2 block">Sports to train</span>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ["running", "Road Running"],
+              ["trail_running", "Trail Running"],
+              ["strength", "Strength / Hypertrophy"],
+              ["conditioning", "Conditioning"],
+              ["cycling", "Cycling"],
+              ["triathlon", "Triathlon"],
+            ].map(([value, label]) => (
+              <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.sports.includes(value as any)}
+                  onChange={(e) => {
+                    const sports = e.target.checked
+                      ? [...form.sports, value as any]
+                      : form.sports.filter((s) => s !== value);
+                    setForm({
+                      ...form,
+                      sports,
+                      primarySport: (sports[0] as any) || form.primarySport,
+                    });
+                  }}
+                  className="rounded border-border"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-3">
+            <input
+              className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              placeholder="Other sport..."
+              value={customSportInput}
+              onChange={(e) => setCustomSportInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCustomSport())}
+            />
+            <button
+              type="button"
+              onClick={addCustomSport}
+              className="px-3 py-2 bg-accent text-white rounded-lg text-sm"
+            >
+              Add
+            </button>
+          </div>
+          {((form as any).customSportsList || []).length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {((form as any).customSportsList as string[]).map((s) => (
+                <span
+                  key={s}
+                  className="text-xs bg-background border border-border rounded-full px-2 py-1 flex items-center gap-1"
+                >
+                  {s}
+                  <button
+                    type="button"
+                    className="text-muted hover:text-foreground"
+                    onClick={() =>
                       setForm({
                         ...form,
-                        sports,
-                        primarySport: sports[0] || form.primarySport,
-                      });
-                    }}
-                    className="rounded border-border"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <label className="block mt-3">
-              <span className="text-sm mb-1 block">Other sports (custom)</span>
-              <input
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="e.g. CrossFit, swimming, rowing..."
-                value={(form as any).customSports || ""}
-                onChange={(e) => setForm({ ...form, customSports: e.target.value } as any)}
-              />
-            </label>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <label className="block">
-              <span className="text-sm mb-1 block">Top priority sport</span>
-              <select
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                value={form.primarySport}
-                onChange={(e) => setForm({ ...form, primarySport: e.target.value as any })}
-              >
-                <option value="running">Road Running</option>
-                <option value="trail_running">Trail Running</option>
-                <option value="strength">Strength / Hypertrophy</option>
-                <option value="conditioning">Conditioning</option>
-                <option value="cycling">Cycling</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-sm mb-1 block">Second priority sport</span>
-              <select
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                value={(form as any).secondarySport || "strength"}
-                onChange={(e) => setForm({ ...form, secondarySport: e.target.value } as any)}
-              >
-                <option value="running">Road Running</option>
-                <option value="trail_running">Trail Running</option>
-                <option value="strength">Strength / Hypertrophy</option>
-                <option value="conditioning">Conditioning</option>
-                <option value="cycling">Cycling</option>
-              </select>
-            </label>
-          </div>
-
-          {/* Heart Rate */}
-          <div className="grid grid-cols-2 gap-4">
-            <label className="block">
-              <span className="text-sm mb-1 block">Max HR</span>
-              <input
-                type="number"
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                value={form.hrZones.maxHR}
-                onChange={(e) => {
-                  const maxHR = Number(e.target.value) || 190;
-                  const resting = form.hrZones.restingHR;
-                  setForm({
-                    ...form,
-                    hrZones: {
-                      maxHR,
-                      restingHR: resting,
-                      zones: {
-                        z1: [Math.round(resting + (maxHR - resting) * 0.5), Math.round(resting + (maxHR - resting) * 0.6)],
-                        z2: [Math.round(resting + (maxHR - resting) * 0.6), Math.round(resting + (maxHR - resting) * 0.7)],
-                        z3: [Math.round(resting + (maxHR - resting) * 0.7), Math.round(resting + (maxHR - resting) * 0.8)],
-                        z4: [Math.round(resting + (maxHR - resting) * 0.8), Math.round(resting + (maxHR - resting) * 0.9)],
-                        z5: [Math.round(resting + (maxHR - resting) * 0.9), maxHR],
-                      },
-                    },
-                  });
-                }}
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm mb-1 block">Resting HR</span>
-              <input
-                type="number"
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                value={form.hrZones.restingHR}
-                onChange={(e) => {
-                  const resting = Number(e.target.value) || 55;
-                  const maxHR = form.hrZones.maxHR;
-                  setForm({
-                    ...form,
-                    hrZones: {
-                      maxHR,
-                      restingHR: resting,
-                      zones: {
-                        z1: [Math.round(resting + (maxHR - resting) * 0.5), Math.round(resting + (maxHR - resting) * 0.6)],
-                        z2: [Math.round(resting + (maxHR - resting) * 0.6), Math.round(resting + (maxHR - resting) * 0.7)],
-                        z3: [Math.round(resting + (maxHR - resting) * 0.7), Math.round(resting + (maxHR - resting) * 0.8)],
-                        z4: [Math.round(resting + (maxHR - resting) * 0.8), Math.round(resting + (maxHR - resting) * 0.9)],
-                        z5: [Math.round(resting + (maxHR - resting) * 0.9), maxHR],
-                      },
-                    },
-                  });
-                }}
-              />
-            </label>
-          </div>
-
-          {/* Weekly availability */}
-          <div>
-            <span className="text-sm mb-2 block">Hours available per day</span>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-              {(["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] as const).map((day) => (
-                <label key={day} className="block text-center">
-                  <span className="text-xs text-muted capitalize">{day.slice(0,3)}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={8}
-                    step={0.5}
-                    className="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-sm text-center mt-1"
-                    value={form.weeklyAvailability[day]}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        weeklyAvailability: {
-                          ...form.weeklyAvailability,
-                          [day]: Number(e.target.value) || 0,
-                        },
-                      })
+                        customSportsList: ((form as any).customSportsList || []).filter(
+                          (x: string) => x !== s
+                        ),
+                      } as any)
                     }
-                  />
-                </label>
+                  >
+                    ×
+                  </button>
+                </span>
               ))}
             </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <label className="block">
+            <span className="text-sm mb-1 block">Top priority sport</span>
+            <select
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={form.primarySport}
+              onChange={(e) => setForm({ ...form, primarySport: e.target.value as any })}
+            >
+              <option value="running">Road Running</option>
+              <option value="trail_running">Trail Running</option>
+              <option value="strength">Strength / Hypertrophy</option>
+              <option value="conditioning">Conditioning</option>
+              <option value="cycling">Cycling</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm mb-1 block">Second priority sport</span>
+            <select
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={(form as any).secondarySport || "strength"}
+              onChange={(e) => setForm({ ...form, secondarySport: e.target.value } as any)}
+            >
+              <option value="running">Road Running</option>
+              <option value="trail_running">Trail Running</option>
+              <option value="strength">Strength / Hypertrophy</option>
+              <option value="conditioning">Conditioning</option>
+              <option value="cycling">Cycling</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <label className="block">
+            <span className="text-sm mb-1 block">Max HR</span>
+            <input
+              type="number"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={form.hrZones.maxHR}
+              onChange={(e) => {
+                const maxHR = Number(e.target.value) || 190;
+                const resting = form.hrZones.restingHR;
+                setForm({
+                  ...form,
+                  hrZones: {
+                    maxHR,
+                    restingHR: resting,
+                    zones: {
+                      z1: [
+                        Math.round(resting + (maxHR - resting) * 0.5),
+                        Math.round(resting + (maxHR - resting) * 0.6),
+                      ],
+                      z2: [
+                        Math.round(resting + (maxHR - resting) * 0.6),
+                        Math.round(resting + (maxHR - resting) * 0.7),
+                      ],
+                      z3: [
+                        Math.round(resting + (maxHR - resting) * 0.7),
+                        Math.round(resting + (maxHR - resting) * 0.8),
+                      ],
+                      z4: [
+                        Math.round(resting + (maxHR - resting) * 0.8),
+                        Math.round(resting + (maxHR - resting) * 0.9),
+                      ],
+                      z5: [Math.round(resting + (maxHR - resting) * 0.9), maxHR],
+                    },
+                  },
+                });
+              }}
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm mb-1 block">Resting HR</span>
+            <input
+              type="number"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={form.hrZones.restingHR}
+              onChange={(e) => {
+                const resting = Number(e.target.value) || 55;
+                const maxHR = form.hrZones.maxHR;
+                setForm({
+                  ...form,
+                  hrZones: {
+                    maxHR,
+                    restingHR: resting,
+                    zones: {
+                      z1: [
+                        Math.round(resting + (maxHR - resting) * 0.5),
+                        Math.round(resting + (maxHR - resting) * 0.6),
+                      ],
+                      z2: [
+                        Math.round(resting + (maxHR - resting) * 0.6),
+                        Math.round(resting + (maxHR - resting) * 0.7),
+                      ],
+                      z3: [
+                        Math.round(resting + (maxHR - resting) * 0.7),
+                        Math.round(resting + (maxHR - resting) * 0.8),
+                      ],
+                      z4: [
+                        Math.round(resting + (maxHR - resting) * 0.8),
+                        Math.round(resting + (maxHR - resting) * 0.9),
+                      ],
+                      z5: [Math.round(resting + (maxHR - resting) * 0.9), maxHR],
+                    },
+                  },
+                });
+              }}
+            />
+          </label>
+        </div>
+
+        <label className="block">
+          <span className="text-sm mb-1 block">Training days per week</span>
+          <select
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            value={(form as any).trainingDaysPerWeek ?? 5}
+            onChange={(e) =>
+              setForm({ ...form, trainingDaysPerWeek: Number(e.target.value) } as any)
+            }
+          >
+            {[3, 4, 5, 6, 7].map((n) => (
+              <option key={n} value={n}>
+                {n} days
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div>
+          <span className="text-sm mb-2 block">Hours available per day (optional detail)</span>
+          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+            {(
+              ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
+            ).map((day) => (
+              <label key={day} className="block text-center">
+                <span className="text-xs text-muted capitalize">{day.slice(0, 3)}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={8}
+                  step={0.5}
+                  className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-sm text-center mt-1"
+                  value={form.weeklyAvailability[day]}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      weeklyAvailability: {
+                        ...form.weeklyAvailability,
+                        [day]: Number(e.target.value) || 0,
+                      },
+                    })
+                  }
+                />
+              </label>
+            ))}
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* Running Baseline */}
-      <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Running Baseline</h3>
+      {/* ========== RUNNING ========== */}
+      <Section title="Running Baseline">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="text-sm mb-1 block">Running experience</span>
             <select
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
               value={(form as any).runningBaseline?.experience ?? "intermediate"}
               onChange={(e) =>
                 setForm({
@@ -699,7 +877,8 @@ function ProfileEditor({
                     ...((form as any).runningBaseline || {}),
                     experience: e.target.value,
                     weeklyVolumeKm: (form as any).runningBaseline?.weeklyVolumeKm ?? 40,
-                    longestRunLast30DaysKm: (form as any).runningBaseline?.longestRunLast30DaysKm ?? 15,
+                    longestRunLast30DaysKm:
+                      (form as any).runningBaseline?.longestRunLast30DaysKm ?? 15,
                     preferredSurface: (form as any).runningBaseline?.preferredSurface ?? "mixed",
                   },
                 } as any)
@@ -714,16 +893,13 @@ function ProfileEditor({
           <label className="block">
             <span className="text-sm mb-1 block">Preferred surface</span>
             <select
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
               value={(form as any).runningBaseline?.preferredSurface ?? "mixed"}
               onChange={(e) =>
                 setForm({
                   ...form,
                   runningBaseline: {
                     ...((form as any).runningBaseline || {}),
-                    experience: (form as any).runningBaseline?.experience ?? "intermediate",
-                    weeklyVolumeKm: (form as any).runningBaseline?.weeklyVolumeKm ?? 40,
-                    longestRunLast30DaysKm: (form as any).runningBaseline?.longestRunLast30DaysKm ?? 15,
                     preferredSurface: e.target.value,
                   },
                 } as any)
@@ -738,17 +914,14 @@ function ProfileEditor({
             <span className="text-sm mb-1 block">Weekly volume (km)</span>
             <input
               type="number"
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
               value={(form as any).runningBaseline?.weeklyVolumeKm ?? 40}
               onChange={(e) =>
                 setForm({
                   ...form,
                   runningBaseline: {
                     ...((form as any).runningBaseline || {}),
-                    experience: (form as any).runningBaseline?.experience ?? "intermediate",
                     weeklyVolumeKm: Number(e.target.value) || 0,
-                    longestRunLast30DaysKm: (form as any).runningBaseline?.longestRunLast30DaysKm ?? 15,
-                    preferredSurface: (form as any).runningBaseline?.preferredSurface ?? "mixed",
                   },
                 } as any)
               }
@@ -758,17 +931,14 @@ function ProfileEditor({
             <span className="text-sm mb-1 block">Longest run last 30 days (km)</span>
             <input
               type="number"
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
               value={(form as any).runningBaseline?.longestRunLast30DaysKm ?? 15}
               onChange={(e) =>
                 setForm({
                   ...form,
                   runningBaseline: {
                     ...((form as any).runningBaseline || {}),
-                    experience: (form as any).runningBaseline?.experience ?? "intermediate",
-                    weeklyVolumeKm: (form as any).runningBaseline?.weeklyVolumeKm ?? 40,
                     longestRunLast30DaysKm: Number(e.target.value) || 0,
-                    preferredSurface: (form as any).runningBaseline?.preferredSurface ?? "mixed",
                   },
                 } as any)
               }
@@ -776,177 +946,195 @@ function ProfileEditor({
           </label>
         </div>
 
-        {/* Auto zones preview */}
-        <div className="bg-card border border-border rounded-lg p-3">
-          <p className="text-xs text-muted mb-2">Proposed HR zones (from Max HR & Resting HR) — editable above</p>
+        <div className="bg-background border border-border rounded-lg p-3">
+          <p className="text-xs text-muted mb-2">
+            HR zones (auto from Max/Rest — edit ranges if your method differs)
+          </p>
           <div className="grid grid-cols-5 gap-2 text-center text-xs">
-            {(["z1","z2","z3","z4","z5"] as const).map((z) => (
-              <div key={z} className="bg-background rounded p-2">
+            {(["z1", "z2", "z3", "z4", "z5"] as const).map((z) => (
+              <div key={z} className="space-y-1">
                 <div className="font-medium uppercase text-muted">{z}</div>
-                <div className="text-foreground mt-1">
-                  {form.hrZones.zones[z][0]}–{form.hrZones.zones[z][1]}
-                </div>
+                <input
+                  type="number"
+                  className="w-full bg-card border border-border rounded px-1 py-1 text-center"
+                  value={form.hrZones.zones[z][0]}
+                  onChange={(e) => {
+                    const low = Number(e.target.value) || 0;
+                    const zones = { ...form.hrZones.zones };
+                    zones[z] = [low, zones[z][1]];
+                    setForm({ ...form, hrZones: { ...form.hrZones, zones } });
+                  }}
+                />
+                <input
+                  type="number"
+                  className="w-full bg-card border border-border rounded px-1 py-1 text-center"
+                  value={form.hrZones.zones[z][1]}
+                  onChange={(e) => {
+                    const high = Number(e.target.value) || 0;
+                    const zones = { ...form.hrZones.zones };
+                    zones[z] = [zones[z][0], high];
+                    setForm({ ...form, hrZones: { ...form.hrZones, zones } });
+                  }}
+                />
               </div>
             ))}
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* Strength Baseline */}
-      <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Strength / Hypertrophy Baseline</h3>
-        <div className="grid gap-4">
-          <label className="block">
-            <span className="text-sm mb-1 block">Strength experience</span>
-            <select
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-              value={(form as any).strengthBaseline?.experience ?? "intermediate"}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  strengthBaseline: {
-                    ...((form as any).strengthBaseline || {}),
-                    experience: e.target.value,
-                    trainingApproaches: (form as any).strengthBaseline?.trainingApproaches ?? ["mentzer"],
-                    physiquePriorities: (form as any).strengthBaseline?.physiquePriorities ?? ["general"],
-                    preferredStyle: (form as any).strengthBaseline?.preferredStyle ?? "",
-                  },
-                } as any)
-              }
-            >
-              <option value="beginner">Beginner</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
-              <option value="elite">Elite</option>
-            </select>
-          </label>
+      {/* ========== STRENGTH ========== */}
+      <Section title="Strength / Hypertrophy Baseline">
+        <label className="block">
+          <span className="text-sm mb-1 block">Strength experience</span>
+          <select
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            value={(form as any).strengthBaseline?.experience ?? "intermediate"}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                strengthBaseline: {
+                  ...((form as any).strengthBaseline || {}),
+                  experience: e.target.value,
+                },
+              } as any)
+            }
+          >
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+            <option value="elite">Elite</option>
+          </select>
+        </label>
 
-          <div>
-            <span className="text-sm mb-2 block">Training approaches</span>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                ["mentzer", "Mike Mentzer / Heavy Duty"],
-                ["strength", "Strength"],
-                ["hypertrophy", "Hypertrophy"],
-                ["hiit", "HIIT"],
-                ["functional", "Functional Training"],
-                ["moderate", "Moderate volume"],
-              ].map(([value, label]) => (
-                <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={((form as any).strengthBaseline?.trainingApproaches ?? []).includes(value)}
-                    onChange={(e) => {
-                      const current = (form as any).strengthBaseline?.trainingApproaches ?? [];
-                      const next = e.target.checked
-                        ? [...current, value]
-                        : current.filter((p: string) => p !== value);
-                      setForm({
-                        ...form,
-                        strengthBaseline: {
-                          ...((form as any).strengthBaseline || {}),
-                          experience: (form as any).strengthBaseline?.experience ?? "intermediate",
-                          trainingApproaches: next,
-                          physiquePriorities: (form as any).strengthBaseline?.physiquePriorities ?? ["general"],
-                          preferredStyle: (form as any).strengthBaseline?.preferredStyle ?? "",
-                        },
-                      } as any);
-                    }}
-                    className="rounded border-border"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <label className="block mt-2">
-              <span className="text-sm mb-1 block">Other approach</span>
-              <input
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="Describe other approach..."
-                value={(form as any).strengthBaseline?.trainingApproachOther || ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    strengthBaseline: {
-                      ...((form as any).strengthBaseline || {}),
-                      trainingApproachOther: e.target.value,
-                    },
-                  } as any)
-                }
-              />
-            </label>
+        <div>
+          <span className="text-sm mb-2 block">Training approaches</span>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ["heavy_duty", "Heavy Duty"],
+              ["strength", "Strength"],
+              ["hypertrophy", "Hypertrophy"],
+              ["functional", "Functional Training"],
+            ].map(([value, label]) => (
+              <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={((form as any).strengthBaseline?.trainingApproaches ?? []).includes(
+                    value
+                  )}
+                  onChange={(e) => {
+                    const current = (form as any).strengthBaseline?.trainingApproaches ?? [];
+                    const next = e.target.checked
+                      ? [...current, value]
+                      : current.filter((p: string) => p !== value);
+                    setForm({
+                      ...form,
+                      strengthBaseline: {
+                        ...((form as any).strengthBaseline || {}),
+                        trainingApproaches: next,
+                      },
+                    } as any);
+                  }}
+                  className="rounded border-border"
+                />
+                {label}
+              </label>
+            ))}
           </div>
+          <div className="flex gap-2 mt-2">
+            <input
+              className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              placeholder="Other approach..."
+              value={approachOtherInput}
+              onChange={(e) => setApproachOtherInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addApproachOther())}
+            />
+            <button
+              type="button"
+              onClick={addApproachOther}
+              className="px-3 py-2 bg-accent text-white rounded-lg text-sm"
+            >
+              Add
+            </button>
+          </div>
+          {(form as any).strengthBaseline?.trainingApproachOther && (
+            <p className="text-xs text-muted mt-1">
+              Other: {(form as any).strengthBaseline.trainingApproachOther}
+            </p>
+          )}
+        </div>
 
-          <div>
-            <span className="text-sm mb-2 block">Physique priorities</span>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                ["general", "General muscle growth"],
-                ["chest", "Chest"],
-                ["arms", "Arms"],
-                ["back", "Back"],
-                ["shoulders", "Shoulders"],
-                ["legs", "Legs"],
-              ].map(([value, label]) => (
-                <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={((form as any).strengthBaseline?.physiquePriorities ?? []).includes(value)}
-                    onChange={(e) => {
-                      const current = (form as any).strengthBaseline?.physiquePriorities ?? [];
-                      const next = e.target.checked
-                        ? [...current, value]
-                        : current.filter((p: string) => p !== value);
-                      setForm({
-                        ...form,
-                        strengthBaseline: {
-                          ...((form as any).strengthBaseline || {}),
-                          experience: (form as any).strengthBaseline?.experience ?? "intermediate",
-                          trainingApproaches: (form as any).strengthBaseline?.trainingApproaches ?? ["mentzer"],
-                          physiquePriorities: next,
-                          preferredStyle: (form as any).strengthBaseline?.preferredStyle ?? "",
-                        },
-                      } as any);
-                    }}
-                    className="rounded border-border"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <label className="block mt-2">
-              <span className="text-sm mb-1 block">Other physique focus</span>
-              <input
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="e.g. core, glutes, calves..."
-                value={(form as any).strengthBaseline?.physiqueOther || ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    strengthBaseline: {
-                      ...((form as any).strengthBaseline || {}),
-                      physiqueOther: e.target.value,
-                    },
-                  } as any)
-                }
-              />
-            </label>
+        <div>
+          <span className="text-sm mb-2 block">Physique priorities</span>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ["general", "General muscle growth"],
+              ["chest", "Chest"],
+              ["arms", "Arms"],
+              ["back", "Back"],
+              ["shoulders", "Shoulders"],
+              ["legs", "Legs"],
+            ].map(([value, label]) => (
+              <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={((form as any).strengthBaseline?.physiquePriorities ?? []).includes(
+                    value
+                  )}
+                  onChange={(e) => {
+                    const current = (form as any).strengthBaseline?.physiquePriorities ?? [];
+                    const next = e.target.checked
+                      ? [...current, value]
+                      : current.filter((p: string) => p !== value);
+                    setForm({
+                      ...form,
+                      strengthBaseline: {
+                        ...((form as any).strengthBaseline || {}),
+                        physiquePriorities: next,
+                      },
+                    } as any);
+                  }}
+                  className="rounded border-border"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-2">
+            <input
+              className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              placeholder="Other focus (e.g. core, glutes)..."
+              value={physiqueOtherInput}
+              onChange={(e) => setPhysiqueOtherInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addPhysiqueOther())}
+            />
+            <button
+              type="button"
+              onClick={addPhysiqueOther}
+              className="px-3 py-2 bg-accent text-white rounded-lg text-sm"
+            >
+              Add
+            </button>
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* Goals */}
-      <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Goals & Priorities</h3>
+      {/* ========== GOALS ========== */}
+      <Section title="Goals & Races">
         <div className="space-y-2">
           {form.goals.map((g) => (
             <div
               key={g.id}
-              className="flex items-center gap-3 bg-card border border-border rounded-lg px-3 py-2"
+              className="flex flex-wrap items-center gap-2 bg-background border border-border rounded-lg px-3 py-2"
             >
-              <span className="flex-1 text-sm">{g.title}</span>
+              <span className="flex-1 text-sm font-medium">{g.title}</span>
+              {g.targetDate && (
+                <span className="text-xs text-muted">{g.targetDate}</span>
+              )}
+              {g.metrics?.distanceKm && (
+                <span className="text-xs text-muted">{g.metrics.distanceKm} km</span>
+              )}
               <select
-                className="bg-background border border-border rounded px-2 py-1 text-xs"
+                className="bg-card border border-border rounded px-2 py-1 text-xs"
                 value={g.priority}
                 onChange={(e) => {
                   const priority = Number(e.target.value) as 1 | 2 | 3 | 4 | 5;
@@ -958,44 +1146,81 @@ function ProfileEditor({
                   });
                 }}
               >
-                {[1, 2, 3, 4, 5].map((p) => (
+                {[5, 4, 3, 2, 1].map((p) => (
                   <option key={p} value={p}>
                     P{p}
                   </option>
                 ))}
               </select>
               <button
+                type="button"
+                className="text-xs text-muted hover:text-red-400"
                 onClick={() =>
                   setForm({ ...form, goals: form.goals.filter((x) => x.id !== g.id) })
                 }
-                className="text-muted hover:text-danger text-xs"
               >
                 Remove
               </button>
             </div>
           ))}
         </div>
-        <div className="flex gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <input
-            className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-sm"
-            placeholder="Add a goal (e.g. Sub-4h marathon, +5kg bench)"
+            className="bg-background border border-border rounded-lg px-3 py-2 text-sm sm:col-span-2"
+            placeholder="Goal / race name"
             value={newGoalTitle}
             onChange={(e) => setNewGoalTitle(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addGoal()}
           />
-          <button
-            onClick={addGoal}
-            className="px-4 py-2 bg-accent/20 text-accent rounded-lg text-sm font-medium hover:bg-accent/30"
+          <select
+            className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            value={newGoalType}
+            onChange={(e) => setNewGoalType(e.target.value)}
           >
-            Add
-          </button>
+            <option value="race">Race</option>
+            <option value="distance">Distance</option>
+            <option value="time">Time goal</option>
+            <option value="hypertrophy">Hypertrophy</option>
+            <option value="strength">Strength</option>
+            <option value="endurance">Endurance</option>
+            <option value="custom">Custom</option>
+          </select>
+          <input
+            type="date"
+            className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            value={newGoalDate}
+            onChange={(e) => setNewGoalDate(e.target.value)}
+          />
+          <input
+            type="number"
+            className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            placeholder="Distance (km) optional"
+            value={newGoalDistance}
+            onChange={(e) => setNewGoalDistance(e.target.value)}
+          />
+          <select
+            className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            value={newGoalPriority}
+            onChange={(e) => setNewGoalPriority(Number(e.target.value))}
+          >
+            {[5, 4, 3, 2, 1].map((p) => (
+              <option key={p} value={p}>
+                Priority {p}
+              </option>
+            ))}
+          </select>
         </div>
-      </section>
+        <button
+          type="button"
+          onClick={addGoal}
+          className="px-4 py-2 bg-accent text-white rounded-lg text-sm"
+        >
+          Add goal
+        </button>
+      </Section>
 
-      {/* Equipment */}
-      <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Equipment</h3>
-        <div className="space-y-4">
+      {/* ========== EQUIPMENT ========== */}
+      <Section title="Equipment" defaultOpen={false}>
+        <div className="space-y-3">
           {[
             {
               title: "Access",
@@ -1013,7 +1238,7 @@ function ProfileEditor({
                 ["dumbbells", "Dumbbells"],
                 ["kettlebells", "Kettlebells"],
                 ["weightPlates", "Weight Plates"],
-                ["rack", "Rack / Squat Rack"],
+                ["rack", "Rack"],
                 ["bench", "Bench"],
               ],
             },
@@ -1045,7 +1270,7 @@ function ProfileEditor({
               ],
             },
           ].map((group) => (
-            <details key={group.title} className="bg-background border border-border rounded-lg" open>
+            <details key={group.title} className="bg-background border border-border rounded-lg">
               <summary className="px-3 py-2 text-sm font-medium cursor-pointer select-none">
                 {group.title}
               </summary>
@@ -1070,32 +1295,82 @@ function ProfileEditor({
             </details>
           ))}
         </div>
-      </section>
+        <div className="flex gap-2 mt-2">
+          <input
+            className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            placeholder="Other equipment..."
+            value={equipmentOtherInput}
+            onChange={(e) => setEquipmentOtherInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addEquipmentOther())}
+          />
+          <button
+            type="button"
+            onClick={addEquipmentOther}
+            className="px-3 py-2 bg-accent text-white rounded-lg text-sm"
+          >
+            Add
+          </button>
+        </div>
+        {(form.equipment.other || []).length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {form.equipment.other.map((s) => (
+              <span
+                key={s}
+                className="text-xs bg-background border border-border rounded-full px-2 py-1"
+              >
+                {s}{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      equipment: {
+                        ...form.equipment,
+                        other: form.equipment.other.filter((x) => x !== s),
+                      },
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </Section>
 
-      {/* Constraints */}
-      <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">
-          Constraints & Notes
-        </h3>
-        <textarea
-          className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-accent"
-          placeholder="Injuries, time constraints, preferences, past injuries, anything else the coach should know..."
-          value={form.constraints}
-          onChange={(e) => setForm({ ...form, constraints: e.target.value })}
-        />
-      </section>
+      {/* ========== CONSTRAINTS ========== */}
+      <Section title="Constraints & Notes" defaultOpen={false}>
+        <label className="block">
+          <span className="text-sm mb-1 block">Constraints (injuries, limits…)</span>
+          <textarea
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[80px]"
+            value={form.constraints}
+            onChange={(e) => setForm({ ...form, constraints: e.target.value })}
+            placeholder="e.g. knee sensitive on downhills, limited shoulder ROM..."
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm mb-1 block">Notes</span>
+          <textarea
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[80px]"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="Anything else the engine should know..."
+          />
+        </label>
+      </Section>
 
       <button
         onClick={handleSave}
-        className="w-full py-3 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors"
+        className="w-full py-3 bg-accent hover:opacity-90 text-white rounded-xl font-medium"
       >
-        Save Profile
+        Save profile
       </button>
     </div>
   );
 }
 
-// ==================== PLAN VIEW ====================
 function PlanView({
   plan,
   profile,
