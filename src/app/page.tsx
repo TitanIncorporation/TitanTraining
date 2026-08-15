@@ -421,10 +421,12 @@ function ProfileSection({
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   return (
     <details
       className="bg-card border border-border rounded-xl overflow-hidden"
-      defaultOpen={defaultOpen}
+      open={isOpen}
+      onToggle={(e) => setIsOpen((e.target as HTMLDetailsElement).open)}
     >
       <summary className="px-4 py-3 font-medium text-sm uppercase tracking-wide cursor-pointer select-none hover:bg-card-hover list-none flex items-center justify-between">
         <span>{title}</span>
