@@ -130,7 +130,7 @@ export interface AthleteProfile {
   createdAt: string;
   updatedAt: string;
   // keep for backward compat
-  experienceLevel?: "beginner" | "intermediate" | "advanced" | "elite";
+  experienceLevel: "beginner" | "intermediate" | "advanced" | "elite";
 }
 
 export type WorkoutType =
