@@ -418,8 +418,9 @@ function ProfileEditor({
   onSave: (p: AthleteProfile) => void;
 }) {
   const [form, setForm] = useState<AthleteProfile>(
-    profile || {
+    profile || ({
       name: "",
+      fitnessLevel: "intermediate",
       experienceLevel: "intermediate",
       sports: ["running", "strength"],
       sportPriorities: [
@@ -427,6 +428,8 @@ function ProfileEditor({
         { sport: "strength", priority: 2 },
       ],
       primarySport: "running",
+      secondarySport: "strength",
+      customSports: "",
       goals: [],
       hrZones: defaultHRZones(),
       equipment: defaultEquipment,
@@ -436,8 +439,8 @@ function ProfileEditor({
         wednesday: 1,
         thursday: 1,
         friday: 1,
-        saturday: 2,
-        sunday: 2,
+        saturday: 3,
+        sunday: 3,
       },
       runningBaseline: {
         experience: "intermediate",
@@ -447,15 +450,17 @@ function ProfileEditor({
       },
       strengthBaseline: {
         experience: "intermediate",
-        trainingApproach: "mentzer",
+        trainingApproaches: ["mentzer", "hypertrophy"],
+        trainingApproachOther: "",
         physiquePriorities: ["general"],
+        physiqueOther: "",
         preferredStyle: "",
       },
       constraints: "",
       notes: "",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    }
+    } as AthleteProfile)
   );
 
   const [newGoalTitle, setNewGoalTitle] = useState("");
@@ -487,20 +492,21 @@ function ProfileEditor({
         <p className="text-muted mt-1">This data drives the training plan generator.</p>
       </div>
 
-      {/* Baseline – Generic */}
+      {/* Baseline – General */}
       <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Baseline</h3>
+        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Baseline – General</h3>
         <div className="grid gap-4">
           <label className="block">
-            <span className="text-sm mb-1 block">Overall Experience</span>
+            <span className="text-sm mb-1 block">Current fitness level</span>
             <select
               className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-              value={form.experienceLevel}
+              value={(form as any).fitnessLevel || form.experienceLevel || "intermediate"}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  experienceLevel: e.target.value as AthleteProfile["experienceLevel"],
-                })
+                  fitnessLevel: e.target.value,
+                  experienceLevel: e.target.value,
+                } as AthleteProfile)
               }
             >
               <option value="beginner">Beginner</option>
@@ -541,22 +547,132 @@ function ProfileEditor({
                 </label>
               ))}
             </div>
+            <label className="block mt-3">
+              <span className="text-sm mb-1 block">Other sports (custom)</span>
+              <input
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="e.g. CrossFit, swimming, rowing..."
+                value={(form as any).customSports || ""}
+                onChange={(e) => setForm({ ...form, customSports: e.target.value } as any)}
+              />
+            </label>
           </div>
 
-          <label className="block">
-            <span className="text-sm mb-1 block">Primary sport (highest priority)</span>
-            <select
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-              value={form.primarySport}
-              onChange={(e) => setForm({ ...form, primarySport: e.target.value as any })}
-            >
-              <option value="running">Road Running</option>
-              <option value="trail_running">Trail Running</option>
-              <option value="strength">Strength / Hypertrophy</option>
-              <option value="conditioning">Conditioning</option>
-              <option value="cycling">Cycling</option>
-            </select>
-          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block">
+              <span className="text-sm mb-1 block">Top priority sport</span>
+              <select
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                value={form.primarySport}
+                onChange={(e) => setForm({ ...form, primarySport: e.target.value as any })}
+              >
+                <option value="running">Road Running</option>
+                <option value="trail_running">Trail Running</option>
+                <option value="strength">Strength / Hypertrophy</option>
+                <option value="conditioning">Conditioning</option>
+                <option value="cycling">Cycling</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm mb-1 block">Second priority sport</span>
+              <select
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                value={(form as any).secondarySport || "strength"}
+                onChange={(e) => setForm({ ...form, secondarySport: e.target.value } as any)}
+              >
+                <option value="running">Road Running</option>
+                <option value="trail_running">Trail Running</option>
+                <option value="strength">Strength / Hypertrophy</option>
+                <option value="conditioning">Conditioning</option>
+                <option value="cycling">Cycling</option>
+              </select>
+            </label>
+          </div>
+
+          {/* Heart Rate */}
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block">
+              <span className="text-sm mb-1 block">Max HR</span>
+              <input
+                type="number"
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                value={form.hrZones.maxHR}
+                onChange={(e) => {
+                  const maxHR = Number(e.target.value) || 190;
+                  const resting = form.hrZones.restingHR;
+                  setForm({
+                    ...form,
+                    hrZones: {
+                      maxHR,
+                      restingHR: resting,
+                      zones: {
+                        z1: [Math.round(resting + (maxHR - resting) * 0.5), Math.round(resting + (maxHR - resting) * 0.6)],
+                        z2: [Math.round(resting + (maxHR - resting) * 0.6), Math.round(resting + (maxHR - resting) * 0.7)],
+                        z3: [Math.round(resting + (maxHR - resting) * 0.7), Math.round(resting + (maxHR - resting) * 0.8)],
+                        z4: [Math.round(resting + (maxHR - resting) * 0.8), Math.round(resting + (maxHR - resting) * 0.9)],
+                        z5: [Math.round(resting + (maxHR - resting) * 0.9), maxHR],
+                      },
+                    },
+                  });
+                }}
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm mb-1 block">Resting HR</span>
+              <input
+                type="number"
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                value={form.hrZones.restingHR}
+                onChange={(e) => {
+                  const resting = Number(e.target.value) || 55;
+                  const maxHR = form.hrZones.maxHR;
+                  setForm({
+                    ...form,
+                    hrZones: {
+                      maxHR,
+                      restingHR: resting,
+                      zones: {
+                        z1: [Math.round(resting + (maxHR - resting) * 0.5), Math.round(resting + (maxHR - resting) * 0.6)],
+                        z2: [Math.round(resting + (maxHR - resting) * 0.6), Math.round(resting + (maxHR - resting) * 0.7)],
+                        z3: [Math.round(resting + (maxHR - resting) * 0.7), Math.round(resting + (maxHR - resting) * 0.8)],
+                        z4: [Math.round(resting + (maxHR - resting) * 0.8), Math.round(resting + (maxHR - resting) * 0.9)],
+                        z5: [Math.round(resting + (maxHR - resting) * 0.9), maxHR],
+                      },
+                    },
+                  });
+                }}
+              />
+            </label>
+          </div>
+
+          {/* Weekly availability */}
+          <div>
+            <span className="text-sm mb-2 block">Hours available per day</span>
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+              {(["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] as const).map((day) => (
+                <label key={day} className="block text-center">
+                  <span className="text-xs text-muted capitalize">{day.slice(0,3)}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={8}
+                    step={0.5}
+                    className="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-sm text-center mt-1"
+                    value={form.weeklyAvailability[day]}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        weeklyAvailability: {
+                          ...form.weeklyAvailability,
+                          [day]: Number(e.target.value) || 0,
+                        },
+                      })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -564,6 +680,53 @@ function ProfileEditor({
       <section className="space-y-4">
         <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Running Baseline</h3>
         <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-sm mb-1 block">Running experience</span>
+            <select
+              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              value={(form as any).runningBaseline?.experience ?? "intermediate"}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  runningBaseline: {
+                    ...((form as any).runningBaseline || {}),
+                    experience: e.target.value,
+                    weeklyVolumeKm: (form as any).runningBaseline?.weeklyVolumeKm ?? 40,
+                    longestRunLast30DaysKm: (form as any).runningBaseline?.longestRunLast30DaysKm ?? 15,
+                    preferredSurface: (form as any).runningBaseline?.preferredSurface ?? "mixed",
+                  },
+                } as any)
+              }
+            >
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+              <option value="elite">Elite</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm mb-1 block">Preferred surface</span>
+            <select
+              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              value={(form as any).runningBaseline?.preferredSurface ?? "mixed"}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  runningBaseline: {
+                    ...((form as any).runningBaseline || {}),
+                    experience: (form as any).runningBaseline?.experience ?? "intermediate",
+                    weeklyVolumeKm: (form as any).runningBaseline?.weeklyVolumeKm ?? 40,
+                    longestRunLast30DaysKm: (form as any).runningBaseline?.longestRunLast30DaysKm ?? 15,
+                    preferredSurface: e.target.value,
+                  },
+                } as any)
+              }
+            >
+              <option value="road">Road</option>
+              <option value="trail">Trail</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </label>
           <label className="block">
             <span className="text-sm mb-1 block">Weekly volume (km)</span>
             <input
@@ -574,7 +737,8 @@ function ProfileEditor({
                 setForm({
                   ...form,
                   runningBaseline: {
-                    experience: form.experienceLevel,
+                    ...((form as any).runningBaseline || {}),
+                    experience: (form as any).runningBaseline?.experience ?? "intermediate",
                     weeklyVolumeKm: Number(e.target.value) || 0,
                     longestRunLast30DaysKm: (form as any).runningBaseline?.longestRunLast30DaysKm ?? 15,
                     preferredSurface: (form as any).runningBaseline?.preferredSurface ?? "mixed",
@@ -593,7 +757,8 @@ function ProfileEditor({
                 setForm({
                   ...form,
                   runningBaseline: {
-                    experience: form.experienceLevel,
+                    ...((form as any).runningBaseline || {}),
+                    experience: (form as any).runningBaseline?.experience ?? "intermediate",
                     weeklyVolumeKm: (form as any).runningBaseline?.weeklyVolumeKm ?? 40,
                     longestRunLast30DaysKm: Number(e.target.value) || 0,
                     preferredSurface: (form as any).runningBaseline?.preferredSurface ?? "mixed",
@@ -603,6 +768,21 @@ function ProfileEditor({
             />
           </label>
         </div>
+
+        {/* Auto zones preview */}
+        <div className="bg-card border border-border rounded-lg p-3">
+          <p className="text-xs text-muted mb-2">Proposed HR zones (from Max HR & Resting HR) — editable above</p>
+          <div className="grid grid-cols-5 gap-2 text-center text-xs">
+            {(["z1","z2","z3","z4","z5"] as const).map((z) => (
+              <div key={z} className="bg-background rounded p-2">
+                <div className="font-medium uppercase text-muted">{z}</div>
+                <div className="text-foreground mt-1">
+                  {form.hrZones.zones[z][0]}–{form.hrZones.zones[z][1]}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* Strength Baseline */}
@@ -610,34 +790,92 @@ function ProfileEditor({
         <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Strength / Hypertrophy Baseline</h3>
         <div className="grid gap-4">
           <label className="block">
-            <span className="text-sm mb-1 block">Training approach</span>
+            <span className="text-sm mb-1 block">Strength experience</span>
             <select
               className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-              value={(form as any).strengthBaseline?.trainingApproach ?? "mentzer"}
+              value={(form as any).strengthBaseline?.experience ?? "intermediate"}
               onChange={(e) =>
                 setForm({
                   ...form,
                   strengthBaseline: {
-                    experience: form.experienceLevel,
-                    trainingApproach: e.target.value,
+                    ...((form as any).strengthBaseline || {}),
+                    experience: e.target.value,
+                    trainingApproaches: (form as any).strengthBaseline?.trainingApproaches ?? ["mentzer"],
                     physiquePriorities: (form as any).strengthBaseline?.physiquePriorities ?? ["general"],
                     preferredStyle: (form as any).strengthBaseline?.preferredStyle ?? "",
                   },
                 } as any)
               }
             >
-              <option value="mentzer">Mike Mentzer / Heavy Duty (low volume, high intensity)</option>
-              <option value="moderate">Moderate volume</option>
-              <option value="higher_volume">Higher volume / higher frequency</option>
-              <option value="custom">Custom</option>
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+              <option value="elite">Elite</option>
             </select>
           </label>
+
+          <div>
+            <span className="text-sm mb-2 block">Training approaches</span>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ["mentzer", "Mike Mentzer / Heavy Duty"],
+                ["strength", "Strength"],
+                ["hypertrophy", "Hypertrophy"],
+                ["hiit", "HIIT"],
+                ["functional", "Functional Training"],
+                ["moderate", "Moderate volume"],
+              ].map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={((form as any).strengthBaseline?.trainingApproaches ?? []).includes(value)}
+                    onChange={(e) => {
+                      const current = (form as any).strengthBaseline?.trainingApproaches ?? [];
+                      const next = e.target.checked
+                        ? [...current, value]
+                        : current.filter((p: string) => p !== value);
+                      setForm({
+                        ...form,
+                        strengthBaseline: {
+                          ...((form as any).strengthBaseline || {}),
+                          experience: (form as any).strengthBaseline?.experience ?? "intermediate",
+                          trainingApproaches: next,
+                          physiquePriorities: (form as any).strengthBaseline?.physiquePriorities ?? ["general"],
+                          preferredStyle: (form as any).strengthBaseline?.preferredStyle ?? "",
+                        },
+                      } as any);
+                    }}
+                    className="rounded border-border"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <label className="block mt-2">
+              <span className="text-sm mb-1 block">Other approach</span>
+              <input
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Describe other approach..."
+                value={(form as any).strengthBaseline?.trainingApproachOther || ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    strengthBaseline: {
+                      ...((form as any).strengthBaseline || {}),
+                      trainingApproachOther: e.target.value,
+                    },
+                  } as any)
+                }
+              />
+            </label>
+          </div>
+
           <div>
             <span className="text-sm mb-2 block">Physique priorities</span>
             <div className="grid grid-cols-2 gap-2">
               {[
                 ["general", "General muscle growth"],
-                ["upper_chest", "Upper chest"],
+                ["chest", "Chest"],
                 ["arms", "Arms"],
                 ["back", "Back"],
                 ["shoulders", "Shoulders"],
@@ -655,8 +893,9 @@ function ProfileEditor({
                       setForm({
                         ...form,
                         strengthBaseline: {
-                          experience: form.experienceLevel,
-                          trainingApproach: (form as any).strengthBaseline?.trainingApproach ?? "mentzer",
+                          ...((form as any).strengthBaseline || {}),
+                          experience: (form as any).strengthBaseline?.experience ?? "intermediate",
+                          trainingApproaches: (form as any).strengthBaseline?.trainingApproaches ?? ["mentzer"],
                           physiquePriorities: next,
                           preferredStyle: (form as any).strengthBaseline?.preferredStyle ?? "",
                         },
@@ -668,54 +907,24 @@ function ProfileEditor({
                 </label>
               ))}
             </div>
+            <label className="block mt-2">
+              <span className="text-sm mb-1 block">Other physique focus</span>
+              <input
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="e.g. core, glutes, calves..."
+                value={(form as any).strengthBaseline?.physiqueOther || ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    strengthBaseline: {
+                      ...((form as any).strengthBaseline || {}),
+                      physiqueOther: e.target.value,
+                    },
+                  } as any)
+                }
+              />
+            </label>
           </div>
-        </div>
-      </section>
-
-      {/* HR Zones */}
-      <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Heart Rate Zones</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <label className="block">
-            <span className="text-sm mb-1 block">Max HR</span>
-            <input
-              type="number"
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-              value={form.hrZones.maxHR}
-              onChange={(e) => {
-                const maxHR = Number(e.target.value);
-                setForm({
-                  ...form,
-                  hrZones: defaultHRZones(maxHR, form.hrZones.restingHR),
-                });
-              }}
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm mb-1 block">Resting HR</span>
-            <input
-              type="number"
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
-              value={form.hrZones.restingHR}
-              onChange={(e) => {
-                const resting = Number(e.target.value);
-                setForm({
-                  ...form,
-                  hrZones: defaultHRZones(form.hrZones.maxHR, resting),
-                });
-              }}
-            />
-          </label>
-        </div>
-        <div className="grid grid-cols-5 gap-2 text-xs text-center">
-          {(["z1", "z2", "z3", "z4", "z5"] as const).map((z) => (
-            <div key={z} className="bg-card border border-border rounded-lg p-2">
-              <div className="font-medium uppercase">{z}</div>
-              <div className="text-muted mt-1">
-                {form.hrZones.zones[z][0]}–{form.hrZones.zones[z][1]}
-              </div>
-            </div>
-          ))}
         </div>
       </section>
 

@@ -21,7 +21,15 @@ export type GoalType =
   | "endurance"
   | "custom";
 
-export type TrainingApproach = "mentzer" | "moderate" | "higher_volume" | "custom";
+export type TrainingApproach =
+  | "mentzer"
+  | "strength"
+  | "hypertrophy"
+  | "hiit"
+  | "functional"
+  | "moderate"
+  | "higher_volume"
+  | "custom";
 
 export interface Goal {
   id: string;
@@ -88,17 +96,21 @@ export interface RunningBaseline {
 
 export interface StrengthBaseline {
   experience: "beginner" | "intermediate" | "advanced" | "elite";
-  trainingApproach: TrainingApproach;
-  physiquePriorities: string[]; // e.g. ["upper_chest", "arms", "general"]
-  preferredStyle: string; // free text or tags
+  trainingApproaches: TrainingApproach[]; // multi-select
+  trainingApproachOther?: string;
+  physiquePriorities: string[];
+  physiqueOther?: string;
+  preferredStyle: string;
 }
 
 export interface AthleteProfile {
   name: string;
-  experienceLevel: "beginner" | "intermediate" | "advanced" | "elite";
+  fitnessLevel: "beginner" | "intermediate" | "advanced" | "elite"; // overall current fitness
   sports: Sport[];
-  sportPriorities: { sport: Sport; priority: number }[]; // 1 = highest
+  sportPriorities: { sport: Sport; priority: number }[]; // 1 = top, 2 = second
   primarySport: Sport;
+  secondarySport?: Sport;
+  customSports?: string;
   goals: Goal[];
   hrZones: HRZones;
   equipment: Equipment;
@@ -117,6 +129,8 @@ export interface AthleteProfile {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  // keep for backward compat
+  experienceLevel?: "beginner" | "intermediate" | "advanced" | "elite";
 }
 
 export type WorkoutType =
