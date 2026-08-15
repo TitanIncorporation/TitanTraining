@@ -78,7 +78,7 @@ export function generateTrainingPlan(
   const doesStrength = profile.sports.includes("strength");
   const primaryIsTrail = profile.primarySport === "trail_running";
   const hours = weeklyHours(profile);
-  const exp = profile.experienceLevel;
+  const exp = profile.fitnessLevel || profile.experienceLevel || "intermediate";
   const topGoals = highestPriorityGoals(profile.goals);
 
   // Experience-based running anchors (minutes)
@@ -353,7 +353,7 @@ Keep lower-body work controlled so it does not compromise the next long run.
     generatedAt: new Date().toISOString(),
     basedOnProfileSnapshot: {
       primarySport: profile.primarySport,
-      experienceLevel: profile.experienceLevel,
+      experienceLevel: profile.fitnessLevel || profile.experienceLevel,
       goals: profile.goals,
     },
     workouts,

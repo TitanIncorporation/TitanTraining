@@ -323,8 +323,8 @@ function Dashboard({
           sub="Highest priority"
         />
         <StatCard
-          label="Experience"
-          value={profile.experienceLevel}
+          label="Fitness level"
+          value={profile.fitnessLevel || profile.experienceLevel || "—"}
           sub={`${profile.sports.length} sports`}
         />
       </div>
