@@ -411,6 +411,30 @@ function StatCard({
 }
 
 // ==================== PROFILE EDITOR ====================
+
+function ProfileSection({
+  title,
+  children,
+  defaultOpen = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      className="bg-card border border-border rounded-xl overflow-hidden"
+      defaultOpen={defaultOpen}
+    >
+      <summary className="px-4 py-3 font-medium text-sm uppercase tracking-wide cursor-pointer select-none hover:bg-card-hover list-none flex items-center justify-between">
+        <span>{title}</span>
+        <span className="text-muted text-xs">expand / collapse</span>
+      </summary>
+      <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">{children}</div>
+    </details>
+  );
+}
+
 function ProfileEditor({
   profile,
   onSave,
@@ -550,27 +574,6 @@ function ProfileEditor({
     });
   };
 
-  const Section = ({
-    title,
-    children,
-    defaultOpen = true,
-  }: {
-    title: string;
-    children: React.ReactNode;
-    defaultOpen?: boolean;
-  }) => (
-    <details
-      className="bg-card border border-border rounded-xl overflow-hidden"
-      open={defaultOpen}
-    >
-      <summary className="px-4 py-3 font-medium text-sm uppercase tracking-wide cursor-pointer select-none hover:bg-card-hover list-none flex items-center justify-between">
-        <span>{title}</span>
-        <span className="text-muted text-xs">tap to expand/collapse</span>
-      </summary>
-      <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">{children}</div>
-    </details>
-  );
-
   return (
     <div className="space-y-4 max-w-2xl">
       <div>
@@ -579,7 +582,7 @@ function ProfileEditor({
       </div>
 
       {/* ========== GENERAL ========== */}
-      <Section title="Baseline – General">
+      <ProfileSection title="Baseline – General">
         <div className="grid grid-cols-2 gap-4">
           <label className="block">
             <span className="text-sm mb-1 block">Age</span>
@@ -833,18 +836,20 @@ function ProfileEditor({
 
         <div>
           <span className="text-sm mb-2 block">Hours available per day (optional detail)</span>
-          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-1 sm:gap-2">
             {(
               ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
             ).map((day) => (
-              <label key={day} className="block text-center">
-                <span className="text-xs text-muted capitalize">{day.slice(0, 3)}</span>
+              <div key={day} className="flex flex-col items-center gap-1 min-w-0">
+                <span className="text-[10px] sm:text-xs text-muted uppercase tracking-wide">
+                  {day.slice(0, 3)}
+                </span>
                 <input
                   type="number"
                   min={0}
                   max={8}
                   step={0.5}
-                  className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-sm text-center mt-1"
+                  className="w-full min-w-0 bg-background border border-border rounded-lg px-1 py-1.5 text-sm text-center"
                   value={form.weeklyAvailability[day]}
                   onChange={(e) =>
                     setForm({
@@ -856,14 +861,14 @@ function ProfileEditor({
                     })
                   }
                 />
-              </label>
+              </div>
             ))}
           </div>
         </div>
-      </Section>
+      </ProfileSection>
 
       {/* ========== RUNNING ========== */}
-      <Section title="Running Baseline">
+      <ProfileSection title="Running Baseline">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="text-sm mb-1 block">Running experience</span>
@@ -946,14 +951,39 @@ function ProfileEditor({
           </label>
         </div>
 
-        <div className="bg-background border border-border rounded-lg p-3">
-          <p className="text-xs text-muted mb-2">
-            HR zones (auto from Max/Rest — edit ranges if your method differs)
-          </p>
+        <div className="bg-background border border-border rounded-lg p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted">
+              HR zones (bpm). Auto from Max/Rest. Edit freely. % shown of HR reserve.
+            </p>
+            <button
+              type="button"
+              className="text-xs px-2 py-1 rounded border border-border hover:bg-card shrink-0"
+              onClick={() => {
+                const maxHR = form.hrZones.maxHR;
+                const resting = form.hrZones.restingHR;
+                setForm({
+                  ...form,
+                  hrZones: defaultHRZones(maxHR, resting),
+                });
+              }}
+            >
+              Reset zones
+            </button>
+          </div>
           <div className="grid grid-cols-5 gap-2 text-center text-xs">
-            {(["z1", "z2", "z3", "z4", "z5"] as const).map((z) => (
+            {(
+              [
+                ["z1", "50–60%"],
+                ["z2", "60–70%"],
+                ["z3", "70–80%"],
+                ["z4", "80–90%"],
+                ["z5", "90–100%"],
+              ] as const
+            ).map(([z, pct]) => (
               <div key={z} className="space-y-1">
                 <div className="font-medium uppercase text-muted">{z}</div>
+                <div className="text-[10px] text-muted">{pct}</div>
                 <input
                   type="number"
                   className="w-full bg-card border border-border rounded px-1 py-1 text-center"
@@ -980,10 +1010,10 @@ function ProfileEditor({
             ))}
           </div>
         </div>
-      </Section>
+      </ProfileSection>
 
       {/* ========== STRENGTH ========== */}
-      <Section title="Strength / Hypertrophy Baseline">
+      <ProfileSection title="Strength / Hypertrophy Baseline">
         <label className="block">
           <span className="text-sm mb-1 block">Strength experience</span>
           <select
@@ -1105,36 +1135,74 @@ function ProfileEditor({
               placeholder="Other focus (e.g. core, glutes)..."
               value={physiqueOtherInput}
               onChange={(e) => setPhysiqueOtherInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addPhysiqueOther())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addPhysiqueOther();
+                }
+              }}
             />
             <button
               type="button"
               onClick={addPhysiqueOther}
-              className="px-3 py-2 bg-accent text-white rounded-lg text-sm"
+              className="px-3 py-2 bg-accent text-white rounded-lg text-sm shrink-0"
             >
               Add
             </button>
           </div>
+          {((form as any).strengthBaseline?.physiquePriorities || [])
+            .filter((p: string) => !["general", "chest", "arms", "back", "shoulders", "legs"].includes(p))
+            .map((p: string) => (
+              <span
+                key={p}
+                className="inline-flex items-center gap-1 text-xs bg-background border border-border rounded-full px-2 py-1 mr-1 mt-1"
+              >
+                {p}
+                <button
+                  type="button"
+                  className="text-muted hover:text-foreground"
+                  onClick={() => {
+                    const current = (form as any).strengthBaseline?.physiquePriorities ?? [];
+                    setForm({
+                      ...form,
+                      strengthBaseline: {
+                        ...((form as any).strengthBaseline || {}),
+                        physiquePriorities: current.filter((x: string) => x !== p),
+                      },
+                    } as any);
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
         </div>
-      </Section>
+      </ProfileSection>
 
       {/* ========== GOALS ========== */}
-      <Section title="Goals & Races">
+      <ProfileSection title="Goals & Races">
+        <p className="text-xs text-muted">
+          Add races and objectives. Priority 5 = highest. These condition the plan.
+        </p>
         <div className="space-y-2">
+          {form.goals.length === 0 && (
+            <p className="text-sm text-muted">No goals yet.</p>
+          )}
           {form.goals.map((g) => (
             <div
               key={g.id}
-              className="flex flex-wrap items-center gap-2 bg-background border border-border rounded-lg px-3 py-2"
+              className="flex items-start gap-3 bg-background border border-border rounded-lg px-3 py-3"
             >
-              <span className="flex-1 text-sm font-medium">{g.title}</span>
-              {g.targetDate && (
-                <span className="text-xs text-muted">{g.targetDate}</span>
-              )}
-              {g.metrics?.distanceKm && (
-                <span className="text-xs text-muted">{g.metrics.distanceKm} km</span>
-              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{g.title}</p>
+                <p className="text-xs text-muted mt-0.5">
+                  {g.type}
+                  {g.targetDate ? ` · ${g.targetDate}` : ""}
+                  {g.metrics?.distanceKm ? ` · ${g.metrics.distanceKm} km` : ""}
+                </p>
+              </div>
               <select
-                className="bg-card border border-border rounded px-2 py-1 text-xs"
+                className="bg-card border border-border rounded px-2 py-1 text-xs shrink-0"
                 value={g.priority}
                 onChange={(e) => {
                   const priority = Number(e.target.value) as 1 | 2 | 3 | 4 | 5;
@@ -1154,7 +1222,7 @@ function ProfileEditor({
               </select>
               <button
                 type="button"
-                className="text-xs text-muted hover:text-red-400"
+                className="text-xs text-muted hover:text-red-400 shrink-0"
                 onClick={() =>
                   setForm({ ...form, goals: form.goals.filter((x) => x.id !== g.id) })
                 }
@@ -1164,135 +1232,107 @@ function ProfileEditor({
             </div>
           ))}
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+
+        <div className="space-y-2 border-t border-border pt-4">
+          <p className="text-sm font-medium">Add goal</p>
           <input
-            className="bg-background border border-border rounded-lg px-3 py-2 text-sm sm:col-span-2"
-            placeholder="Goal / race name"
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            placeholder="Name (e.g. Valencia Marathon)"
             value={newGoalTitle}
             onChange={(e) => setNewGoalTitle(e.target.value)}
           />
-          <select
-            className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-            value={newGoalType}
-            onChange={(e) => setNewGoalType(e.target.value)}
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={newGoalType}
+              onChange={(e) => setNewGoalType(e.target.value)}
+            >
+              <option value="race">Race</option>
+              <option value="distance">Distance</option>
+              <option value="time">Time</option>
+              <option value="hypertrophy">Hypertrophy</option>
+              <option value="strength">Strength</option>
+              <option value="endurance">Endurance</option>
+              <option value="custom">Custom</option>
+            </select>
+            <input
+              type="date"
+              className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={newGoalDate}
+              onChange={(e) => setNewGoalDate(e.target.value)}
+            />
+            <input
+              type="number"
+              className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              placeholder="Target distance (km)"
+              value={newGoalDistance}
+              onChange={(e) => setNewGoalDistance(e.target.value)}
+            />
+            <select
+              className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={newGoalPriority}
+              onChange={(e) => setNewGoalPriority(Number(e.target.value))}
+            >
+              {[5, 4, 3, 2, 1].map((p) => (
+                <option key={p} value={p}>
+                  Priority {p} {p === 5 ? "(highest)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={addGoal}
+            className="w-full py-2 bg-accent text-white rounded-lg text-sm"
           >
-            <option value="race">Race</option>
-            <option value="distance">Distance</option>
-            <option value="time">Time goal</option>
-            <option value="hypertrophy">Hypertrophy</option>
-            <option value="strength">Strength</option>
-            <option value="endurance">Endurance</option>
-            <option value="custom">Custom</option>
-          </select>
-          <input
-            type="date"
-            className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-            value={newGoalDate}
-            onChange={(e) => setNewGoalDate(e.target.value)}
-          />
-          <input
-            type="number"
-            className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-            placeholder="Distance (km) optional"
-            value={newGoalDistance}
-            onChange={(e) => setNewGoalDistance(e.target.value)}
-          />
-          <select
-            className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-            value={newGoalPriority}
-            onChange={(e) => setNewGoalPriority(Number(e.target.value))}
-          >
-            {[5, 4, 3, 2, 1].map((p) => (
-              <option key={p} value={p}>
-                Priority {p}
-              </option>
-            ))}
-          </select>
+            Add goal
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={addGoal}
-          className="px-4 py-2 bg-accent text-white rounded-lg text-sm"
-        >
-          Add goal
-        </button>
-      </Section>
+      </ProfileSection>
 
       {/* ========== EQUIPMENT ========== */}
-      <Section title="Equipment" defaultOpen={false}>
-        <div className="space-y-3">
-          {[
-            {
-              title: "Access",
-              items: [
-                ["gymAccess", "Gym Access"],
-                ["homeGym", "Home Gym"],
-                ["outdoorAccess", "Outdoor / Park"],
-                ["trailAccess", "Trail Access"],
-              ],
-            },
-            {
-              title: "Free Weights",
-              items: [
-                ["barbell", "Barbell"],
-                ["dumbbells", "Dumbbells"],
-                ["kettlebells", "Kettlebells"],
-                ["weightPlates", "Weight Plates"],
-                ["rack", "Rack"],
-                ["bench", "Bench"],
-              ],
-            },
-            {
-              title: "Bodyweight",
-              items: [
-                ["pullUpBar", "Pull-up Bar"],
-                ["dipBars", "Dip Bars"],
-                ["parallettes", "Parallettes"],
-              ],
-            },
-            {
-              title: "Machines & Cardio",
-              items: [
-                ["machines", "Weight Machines"],
-                ["cableMachine", "Cable Machine"],
-                ["treadmill", "Treadmill"],
-                ["indoorBike", "Indoor Bike"],
-                ["rower", "Rower"],
-              ],
-            },
-            {
-              title: "Other",
-              items: [
-                ["resistanceBands", "Resistance Bands"],
-                ["weightedVest", "Weighted Vest"],
-                ["plyoBox", "Plyo Box"],
-                ["medicineBall", "Medicine Ball"],
-              ],
-            },
-          ].map((group) => (
-            <details key={group.title} className="bg-background border border-border rounded-lg">
-              <summary className="px-3 py-2 text-sm font-medium cursor-pointer select-none">
-                {group.title}
-              </summary>
-              <div className="grid grid-cols-2 gap-2 px-3 pb-3">
-                {group.items.map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={(form.equipment as any)[key] || false}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          equipment: { ...form.equipment, [key]: e.target.checked },
-                        })
-                      }
-                      className="rounded border-border"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </details>
+      <ProfileSection title="Equipment" defaultOpen={false}>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ["gymAccess", "Gym Access"],
+              ["homeGym", "Home Gym"],
+              ["outdoorAccess", "Outdoor / Park"],
+              ["trailAccess", "Trail Access"],
+              ["barbell", "Barbell"],
+              ["dumbbells", "Dumbbells"],
+              ["kettlebells", "Kettlebells"],
+              ["weightPlates", "Weight Plates"],
+              ["rack", "Rack"],
+              ["bench", "Bench"],
+              ["pullUpBar", "Pull-up Bar"],
+              ["dipBars", "Dip Bars"],
+              ["parallettes", "Parallettes"],
+              ["machines", "Weight Machines"],
+              ["cableMachine", "Cable Machine"],
+              ["treadmill", "Treadmill"],
+              ["indoorBike", "Indoor Bike"],
+              ["rower", "Rower"],
+              ["resistanceBands", "Resistance Bands"],
+              ["weightedVest", "Weighted Vest"],
+              ["plyoBox", "Plyo Box"],
+              ["medicineBall", "Medicine Ball"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(form.equipment as any)[key] || false}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    equipment: { ...form.equipment, [key]: e.target.checked },
+                  })
+                }
+                className="rounded border-border"
+              />
+              {label}
+            </label>
           ))}
         </div>
         <div className="flex gap-2 mt-2">
@@ -1301,12 +1341,17 @@ function ProfileEditor({
             placeholder="Other equipment..."
             value={equipmentOtherInput}
             onChange={(e) => setEquipmentOtherInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addEquipmentOther())}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addEquipmentOther();
+              }
+            }}
           />
           <button
             type="button"
             onClick={addEquipmentOther}
-            className="px-3 py-2 bg-accent text-white rounded-lg text-sm"
+            className="px-3 py-2 bg-accent text-white rounded-lg text-sm shrink-0"
           >
             Add
           </button>
@@ -1337,10 +1382,10 @@ function ProfileEditor({
             ))}
           </div>
         )}
-      </Section>
+      </ProfileSection>
 
       {/* ========== CONSTRAINTS ========== */}
-      <Section title="Constraints & Notes" defaultOpen={false}>
+      <ProfileSection title="Constraints & Notes" defaultOpen={false}>
         <label className="block">
           <span className="text-sm mb-1 block">Constraints (injuries, limits…)</span>
           <textarea
@@ -1359,7 +1404,7 @@ function ProfileEditor({
             placeholder="Anything else the engine should know..."
           />
         </label>
-      </Section>
+      </ProfileSection>
 
       <button
         onClick={handleSave}
