@@ -21,6 +21,9 @@ import {
 } from "@/lib/storage";
 import { generateTrainingPlan } from "@/lib/plan-generator";
 import { downloadICS } from "@/lib/export";
+import { supabase } from "@/lib/supabase";
+import Auth from "@/components/Auth";
+import WorkoutDetail from "@/components/WorkoutDetail";
 import {
   LayoutDashboard,
   User,
@@ -35,8 +38,12 @@ import {
   CheckCircle2,
   Circle,
   Shield,
+  ChevronDown,
+  ChevronRight,
+  LogOut,
 } from "lucide-react";
 import { format, parseISO, isToday, isFuture, isPast, startOfWeek } from "date-fns";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 type Tab = "dashboard" | "profile" | "plan" | "progress" | "sync";
 
@@ -54,22 +61,51 @@ const defaultHRZones = (maxHR = 190, resting = 55): HRZones => ({
 
 const defaultEquipment: Equipment = {
   gymAccess: true,
-  homeGym: false,
-  freeWeights: true,
-  machines: true,
-  resistanceBands: true,
-  pullUpBar: true,
-  treadmill: false,
+  homeGym: true,
+  outdoorAccess: true,
   trailAccess: true,
+  barbell: true,
+  dumbbells: true,
+  kettlebells: true,
+  weightPlates: true,
+  rack: true,
+  bench: true,
+  pullUpBar: true,
+  dipBars: false,
+  parallettes: false,
+  machines: false,
+  cableMachine: false,
+  treadmill: false,
+  indoorBike: true,
+  rower: false,
+  resistanceBands: true,
+  weightedVest: true,
+  plyoBox: true,
+  medicineBall: false,
   other: [],
 };
 
 export default function TitanTraining() {
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [profile, setProfile] = useState<AthleteProfile | null>(null);
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
+
+  // Auth check
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -80,6 +116,23 @@ export default function TitanTraining() {
     if (pl) setPlan(pl);
     setWorkouts(w);
   }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0c0f14] text-slate-400">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth onAuth={() => supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))} />;
+  }
 
   const handleSaveProfile = (updated: AthleteProfile) => {
     setProfile(updated);
@@ -148,6 +201,15 @@ export default function TitanTraining() {
             </button>
           ))}
         </nav>
+        <div className="mt-auto p-3 border-t border-border">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted hover:bg-card-hover hover:text-foreground"
+          >
+            <LogOut className="w-4 h-4" />
+            Log out
+          </button>
+        </div>
       </aside>
 
       {/* Main content */}
@@ -179,6 +241,19 @@ export default function TitanTraining() {
           {tab === "sync" && <SyncView plan={plan} />}
         </div>
       </main>
+
+      {selectedWorkout && (
+        <WorkoutDetail
+          workout={selectedWorkout}
+          onClose={() => setSelectedWorkout(null)}
+          onToggle={(id) => {
+            toggleWorkoutComplete(id);
+            setSelectedWorkout((prev) =>
+              prev && prev.id === id ? { ...prev, completed: !prev.completed } : prev
+            );
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -681,7 +756,7 @@ function PlanView({
           </h3>
           <div className="space-y-2">
             {weekWorkouts.map((w) => (
-              <WorkoutCard key={w.id} workout={w} onToggle={onToggleComplete} />
+              <WorkoutCard key={w.id} workout={w} onToggle={onToggleComplete} onOpen={setSelectedWorkout} />
             ))}
           </div>
         </div>
@@ -693,17 +768,22 @@ function PlanView({
 function WorkoutCard({
   workout,
   onToggle,
+  onOpen,
 }: {
   workout: Workout;
   onToggle: (id: string) => void;
+  onOpen: (w: Workout) => void;
 }) {
   const isStrength = workout.sport === "strength";
   return (
-    <div className="bg-card border border-border rounded-xl p-4">
+    <div
+      className="bg-card border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+      onClick={() => onOpen(workout)}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <button
-            onClick={() => onToggle(workout.id)}
+            onClick={(e) => { e.stopPropagation(); onToggle(workout.id); }}
             className="mt-0.5 hover:scale-110 transition-transform"
             title={workout.completed ? "Mark incomplete" : "Mark complete"}
           >

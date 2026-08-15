@@ -16,8 +16,8 @@ export interface Goal {
   type: GoalType;
   title: string;
   description?: string;
-  targetDate?: string; // ISO
-  priority: 1 | 2 | 3 | 4 | 5; // 5 = highest
+  targetDate?: string;
+  priority: 1 | 2 | 3 | 4 | 5;
   sport?: Sport;
   metrics?: {
     distanceKm?: number;
@@ -32,23 +32,46 @@ export interface HRZones {
   maxHR: number;
   restingHR: number;
   zones: {
-    z1: [number, number]; // recovery
-    z2: [number, number]; // aerobic
-    z3: [number, number]; // tempo
-    z4: [number, number]; // threshold
-    z5: [number, number]; // anaerobic / VO2
+    z1: [number, number];
+    z2: [number, number];
+    z3: [number, number];
+    z4: [number, number];
+    z5: [number, number];
   };
 }
 
 export interface Equipment {
+  // Access
   gymAccess: boolean;
   homeGym: boolean;
-  freeWeights: boolean;
-  machines: boolean;
-  resistanceBands: boolean;
-  pullUpBar: boolean;
-  treadmill: boolean;
+  outdoorAccess: boolean;
   trailAccess: boolean;
+
+  // Free weights
+  barbell: boolean;
+  dumbbells: boolean;
+  kettlebells: boolean;
+  weightPlates: boolean;
+  rack: boolean;
+  bench: boolean;
+
+  // Bodyweight / calisthenics
+  pullUpBar: boolean;
+  dipBars: boolean;
+  parallettes: boolean;
+
+  // Machines & cardio
+  machines: boolean;
+  cableMachine: boolean;
+  treadmill: boolean;
+  indoorBike: boolean;
+  rower: boolean;
+
+  // Other
+  resistanceBands: boolean;
+  weightedVest: boolean;
+  plyoBox: boolean;
+  medicineBall: boolean;
   other: string[];
 }
 
@@ -61,7 +84,7 @@ export interface AthleteProfile {
   hrZones: HRZones;
   equipment: Equipment;
   weeklyAvailability: {
-    monday: number; // hours
+    monday: number;
     tuesday: number;
     wednesday: number;
     thursday: number;
@@ -69,7 +92,7 @@ export interface AthleteProfile {
     saturday: number;
     sunday: number;
   };
-  constraints: string; // injuries, preferences, etc.
+  constraints: string;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -92,7 +115,7 @@ export type WorkoutType =
 
 export interface Workout {
   id: string;
-  date: string; // ISO date
+  date: string;
   type: WorkoutType;
   sport: Sport;
   title: string;
@@ -100,22 +123,20 @@ export interface Workout {
   plannedDurationMin?: number;
   plannedDistanceKm?: number;
   plannedIntensity?: "z1" | "z2" | "z3" | "z4" | "z5" | "mixed";
-  // Strength specific
   exercises?: {
     name: string;
     sets: number;
-    reps: string; // e.g. "8-12" or "5"
+    reps: string;
     load?: string;
     notes?: string;
   }[];
-  // Completed data (from Garmin/Strava or manual)
   completed?: boolean;
   actualDurationMin?: number;
   actualDistanceKm?: number;
   avgHR?: number;
   maxHR?: number;
   avgPace?: string;
-  rpe?: number; // 1-10
+  rpe?: number;
   notes?: string;
   source?: "planned" | "garmin" | "strava" | "manual";
   externalId?: string;
@@ -135,8 +156,8 @@ export interface TrainingPlan {
 
 export interface ProgressSnapshot {
   date: string;
-  estimatedFitness: number; // arbitrary score
-  consistency: number; // 0-100
+  estimatedFitness: number;
+  consistency: number;
   volumeLoad: number;
   strengthProgress?: number;
   notes?: string;
