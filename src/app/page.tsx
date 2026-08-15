@@ -311,7 +311,7 @@ function Dashboard({
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Current Plan" value={plan ? "Active" : "None"} sub={plan?.name} />
+        <StatCard label="Current Plan" value={plan ? "Active" : "None"} sub={plan?.name ?? undefined} />
         <StatCard
           label="Completion"
           value={totalPlanned ? `${Math.round((completedCount / totalPlanned) * 100)}%` : "—"}
@@ -324,7 +324,13 @@ function Dashboard({
         />
         <StatCard
           label="Fitness level"
-          value={String(profile.fitnessLevel || profile.experienceLevel || "—")}
+          value={
+            (profile as any).fitnessLevel
+              ? String((profile as any).fitnessLevel)
+              : profile.experienceLevel
+                ? String(profile.experienceLevel)
+                : "—"
+          }
           sub={`${profile.sports.length} sports`}
         />
       </div>
