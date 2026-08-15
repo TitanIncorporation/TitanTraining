@@ -230,17 +230,17 @@ Finish tired but not broken.`,
         let description = "";
 
         if (isUpperFocus) {
-          title = "Upper Body – Heavy Duty";
-          description = `Mike Mentzer / Heavy Duty style.
-Warm-up thoroughly, then perform 1 all-out working set per exercise (1–2 reps in reserve or to technical failure).
+          title = "Upper Body – High Intensity";
+          description = `High-intensity, low-volume approach.
+Warm-up thoroughly, then perform 1 hard working set per exercise (near technical failure).
 Rest 2–4 minutes between hard sets. Focus on progressive overload.`;
 
           exercises = [
             {
               name: hasBarbell && hasBench ? "Incline Barbell Press" : hasDB ? "Incline Dumbbell Press" : "Incline Push-up variation",
-              sets: isDeload ? 1 : 1,
+              sets: 1,
               reps: "6–10",
-              notes: "Primary upper chest focus. 1 hard working set after warm-up.",
+              notes: "1 hard working set after warm-up.",
             },
             {
               name: hasBarbell && hasBench ? "Flat Bench Press or Weighted Dip" : hasDB ? "Flat Dumbbell Press" : "Push-up variation",
@@ -263,19 +263,19 @@ Rest 2–4 minutes between hard sets. Focus on progressive overload.`;
               name: hasDB || hasBarbell ? "Biceps Curl (barbell or DB)" : "Band Curl",
               sets: 1,
               reps: "8–12",
-              notes: "Arms emphasis.",
+              notes: "Direct arm work.",
             },
             {
               name: hasDB || hasBarbell ? "Triceps Extension or Close-grip work" : "Diamond Push-up",
               sets: 1,
               reps: "8–12",
-              notes: "Arms emphasis.",
+              notes: "Direct arm work.",
             },
           ];
         } else {
-          title = "Full Body / Lower Emphasis – Heavy Duty";
-          description = `Heavy Duty style. Low volume, high effort.
-Keep lower-body work controlled so it does not destroy the next long run.
+          title = "Full Body / Lower Emphasis – High Intensity";
+          description = `High-intensity, low-volume approach.
+Keep lower-body work controlled so it does not compromise the next long run.
 1 hard working set per exercise after warm-up.`;
 
           exercises = [
@@ -358,8 +358,8 @@ Keep lower-body work controlled so it does not destroy the next long run.
     },
     workouts,
     weeklyStructure: `Polarized running (≥80% easy). Strength on Heavy Duty / low-volume principles. Deload in final week. Scaled to ${exp} level and ~${hours.toFixed(1)}h available.`,
-    notes: `Built around your priorities: ${goalSummary}.
-Running follows polarized training principles. Hypertrophy defaults to high-intensity, low-volume (Mentzer-inspired) with upper chest + arms bias when relevant.
-Adjust individual sessions based on recovery. Consistency over perfection.`,
+    notes: `Built from profile data. Priorities: ${goalSummary}.
+Running uses polarized principles (≥80% easy). Strength uses high-intensity, low-volume methods by default.
+Sessions scale to experience level and available time. Adjust based on recovery.`,
   };
 }
