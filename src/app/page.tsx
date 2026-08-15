@@ -45,7 +45,7 @@ import {
 import { format, parseISO, isToday, isFuture, isPast, startOfWeek } from "date-fns";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
-type Tab = "dashboard" | "profile" | "plan" | "progress" | "sync";
+type Tab = "dashboard" | "profile" | "plan" | "sync";
 
 const defaultHRZones = (maxHR = 190, resting = 55): HRZones => ({
   maxHR,
@@ -166,8 +166,7 @@ export default function TitanTraining() {
     { id: "dashboard" as Tab, label: "Dashboard", icon: LayoutDashboard },
     { id: "profile" as Tab, label: "Profile", icon: User },
     { id: "plan" as Tab, label: "Training Plan", icon: Calendar },
-    { id: "progress" as Tab, label: "Progress", icon: TrendingUp },
-    { id: "sync" as Tab, label: "Data & Sync", icon: Shield },
+    { id: "sync" as Tab, label: "Strava", icon: Shield },
   ];
 
   return (
@@ -238,7 +237,6 @@ export default function TitanTraining() {
               onOpenWorkout={setSelectedWorkout}
             />
           )}
-          {tab === "progress" && <ProgressView plan={plan} workouts={workouts} profile={profile} />}
           {tab === "sync" && <SyncView plan={plan} />}
         </div>
       </main>
@@ -304,23 +302,21 @@ function Dashboard({
     <div className="space-y-8">
       <div>
         <h2 className="text-2xl font-semibold">Hey {profile.name || "Athlete"}</h2>
-        <p className="text-muted mt-1">
-          {profile.primarySport === "trail_running" ? "Trail" : "Road"} running priority · Strength support
+        <p className="text-muted mt-1 capitalize">
+          {(profile as any).fitnessLevel || profile.experienceLevel || "Athlete"}
+          {" · "}
+          {profile.primarySport?.replace("_", " ") || "training"}
+          {(profile as any).secondarySport ? ` + ${String((profile as any).secondarySport).replace("_", " ")}` : ""}
         </p>
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <StatCard label="Current Plan" value={plan ? "Active" : "None"} sub={plan?.name ?? undefined} />
         <StatCard
-          label="Completion"
-          value={totalPlanned ? `${Math.round((completedCount / totalPlanned) * 100)}%` : "—"}
-          sub={`${completedCount}/${totalPlanned} workouts`}
-        />
-        <StatCard
-          label="Primary Goal"
-          value={profile.goals.sort((a, b) => b.priority - a.priority)[0]?.title || "—"}
-          sub="Highest priority"
+          label="Top goal"
+          value={profile.goals.find((g) => g.priority === 5)?.title || profile.goals.sort((a, b) => b.priority - a.priority)[0]?.title || "—"}
+          sub="Priority focus"
         />
         <StatCard
           label="Fitness level"
@@ -353,6 +349,34 @@ function Dashboard({
               </>
             )}
           </button>
+        </div>
+      )}
+
+      {/* Progress snapshot (merged from old Progress tab) */}
+      {plan && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          <h3 className="font-semibold">Progress</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-muted uppercase tracking-wide">Completion</p>
+              <p className="text-lg font-semibold mt-0.5">
+                {totalPlanned ? `${Math.round((completedCount / totalPlanned) * 100)}%` : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted uppercase tracking-wide">Done / Planned</p>
+              <p className="text-lg font-semibold mt-0.5">{completedCount} / {totalPlanned}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted uppercase tracking-wide">Block</p>
+              <p className="text-lg font-semibold mt-0.5 truncate">{plan.name}</p>
+            </div>
+          </div>
+          {profile.goals.filter((g) => g.priority === 5).length > 0 && (
+            <p className="text-xs text-muted">
+              Focus: {profile.goals.filter((g) => g.priority === 5).map((g) => g.title).join(", ")}
+            </p>
+          )}
         </div>
       )}
 
@@ -428,9 +452,8 @@ function ProfileSection({
       open={isOpen}
       onToggle={(e) => setIsOpen((e.target as HTMLDetailsElement).open)}
     >
-      <summary className="px-4 py-3 font-medium text-sm uppercase tracking-wide cursor-pointer select-none hover:bg-card-hover list-none flex items-center justify-between">
-        <span>{title}</span>
-        <span className="text-muted text-xs">expand / collapse</span>
+      <summary className="px-4 py-3 font-medium text-sm uppercase tracking-wide cursor-pointer select-none hover:bg-card-hover list-none">
+        {title}
       </summary>
       <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">{children}</div>
     </details>
@@ -497,7 +520,12 @@ function ProfileEditor({
   const [newGoalType, setNewGoalType] = useState<string>("race");
   const [newGoalDate, setNewGoalDate] = useState("");
   const [newGoalDistance, setNewGoalDistance] = useState("");
-  const [newGoalPriority, setNewGoalPriority] = useState(5);
+  const [newGoalTime, setNewGoalTime] = useState("");
+  const [newGoalPace, setNewGoalPace] = useState("");
+  const [newGoalExercise, setNewGoalExercise] = useState("");
+  const [newGoalWeight, setNewGoalWeight] = useState("");
+  const [newGoalReps, setNewGoalReps] = useState("");
+  const [newGoalIsTop, setNewGoalIsTop] = useState(false);
   const [customSportInput, setCustomSportInput] = useState("");
   const [approachOtherInput, setApproachOtherInput] = useState("");
   const [physiqueOtherInput, setPhysiqueOtherInput] = useState("");
@@ -505,20 +533,44 @@ function ProfileEditor({
 
   const addGoal = () => {
     if (!newGoalTitle.trim()) return;
+    const isRunning = ["race", "distance", "time"].includes(newGoalType);
+    const isStrength = newGoalType === "strength";
     const goal: Goal = {
       id: Math.random().toString(36).slice(2),
       type: (newGoalType as any) || "custom",
       title: newGoalTitle.trim(),
-      priority: newGoalPriority as 1 | 2 | 3 | 4 | 5,
+      priority: (newGoalIsTop ? 5 : 3) as 1 | 2 | 3 | 4 | 5,
       targetDate: newGoalDate || undefined,
-      metrics: newGoalDistance
-        ? { distanceKm: Number(newGoalDistance) || undefined }
-        : undefined,
+      metrics: isRunning
+        ? {
+            distanceKm: newGoalDistance ? Number(newGoalDistance) : undefined,
+            timeMinutes: newGoalTime ? Number(newGoalTime) : undefined,
+            paceMinPerKm: newGoalPace ? Number(newGoalPace) : undefined,
+          }
+        : isStrength
+          ? {
+              other: newGoalExercise || undefined,
+              weightKg: newGoalWeight ? Number(newGoalWeight) : undefined,
+              reps: newGoalReps ? Number(newGoalReps) : undefined,
+            }
+          : undefined,
     };
-    setForm({ ...form, goals: [...form.goals, goal] });
+    let goals = [...form.goals, goal];
+    if (newGoalIsTop) {
+      goals = goals.map((g) =>
+        g.id === goal.id ? g : g.priority === 5 ? { ...g, priority: 3 as 1 | 2 | 3 | 4 | 5 } : g
+      );
+    }
+    setForm({ ...form, goals });
     setNewGoalTitle("");
     setNewGoalDate("");
     setNewGoalDistance("");
+    setNewGoalTime("");
+    setNewGoalPace("");
+    setNewGoalExercise("");
+    setNewGoalWeight("");
+    setNewGoalReps("");
+    setNewGoalIsTop(false);
   };
 
   const addCustomSport = () => {
@@ -838,33 +890,43 @@ function ProfileEditor({
 
         <div>
           <span className="text-sm mb-2 block">Hours available per day (optional detail)</span>
-          <div className="grid grid-cols-7 gap-1 sm:gap-2">
-            {(
-              ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
-            ).map((day) => (
-              <div key={day} className="flex flex-col items-center gap-1 min-w-0">
-                <span className="text-[10px] sm:text-xs text-muted uppercase tracking-wide">
-                  {day.slice(0, 3)}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={8}
-                  step={0.5}
-                  className="w-full min-w-0 bg-background border border-border rounded-lg px-1 py-1.5 text-sm text-center"
-                  value={form.weeklyAvailability[day]}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      weeklyAvailability: {
-                        ...form.weeklyAvailability,
-                        [day]: Number(e.target.value) || 0,
-                      },
-                    })
-                  }
-                />
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-muted text-xs">
+                  {(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]).map((d) => (
+                    <th key={d} className="font-normal pb-1 text-center w-[14.28%]">{d}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {(
+                    ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
+                  ).map((day) => (
+                    <td key={day} className="px-0.5">
+                      <input
+                        type="number"
+                        min={0}
+                        max={8}
+                        step={0.5}
+                        className="w-full bg-background border border-border rounded-lg py-1.5 text-sm text-center"
+                        value={form.weeklyAvailability[day]}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            weeklyAvailability: {
+                              ...form.weeklyAvailability,
+                              [day]: Number(e.target.value) || 0,
+                            },
+                          })
+                        }
+                      />
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </ProfileSection>
@@ -1089,9 +1151,24 @@ function ProfileEditor({
             </button>
           </div>
           {(form as any).strengthBaseline?.trainingApproachOther && (
-            <p className="text-xs text-muted mt-1">
-              Other: {(form as any).strengthBaseline.trainingApproachOther}
-            </p>
+            <span className="inline-flex items-center gap-1 text-xs bg-background border border-border rounded-full px-2 py-1 mt-1">
+              {(form as any).strengthBaseline.trainingApproachOther}
+              <button
+                type="button"
+                className="text-muted hover:text-foreground ml-1"
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    strengthBaseline: {
+                      ...((form as any).strengthBaseline || {}),
+                      trainingApproachOther: "",
+                    },
+                  } as any)
+                }
+              >
+                ×
+              </button>
+            </span>
           )}
         </div>
 
@@ -1184,7 +1261,7 @@ function ProfileEditor({
       {/* ========== GOALS ========== */}
       <ProfileSection title="Goals & Races">
         <p className="text-xs text-muted">
-          Add races and objectives. Priority 5 = highest. These condition the plan.
+          Add races and objectives. Mark one as top priority (checkbox). Targets depend on type.
         </p>
         <div className="space-y-2">
           {form.goals.length === 0 && (
@@ -1195,33 +1272,40 @@ function ProfileEditor({
               key={g.id}
               className="flex items-start gap-3 bg-background border border-border rounded-lg px-3 py-3"
             >
+              <label className="flex items-center gap-1.5 shrink-0 pt-0.5 cursor-pointer" title="Top priority">
+                <input
+                  type="checkbox"
+                  checked={g.priority === 5}
+                  onChange={(e) => {
+                    const goals = form.goals.map((goal) => {
+                      if (goal.id === g.id) {
+                        return { ...goal, priority: (e.target.checked ? 5 : 3) as 1 | 2 | 3 | 4 | 5 };
+                      }
+                      // only one top priority
+                      if (e.target.checked && goal.priority === 5) {
+                        return { ...goal, priority: 3 as 1 | 2 | 3 | 4 | 5 };
+                      }
+                      return goal;
+                    });
+                    setForm({ ...form, goals });
+                  }}
+                  className="rounded border-border"
+                />
+                <span className="text-[10px] text-muted">Top</span>
+              </label>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{g.title}</p>
                 <p className="text-xs text-muted mt-0.5">
                   {g.type}
                   {g.targetDate ? ` · ${g.targetDate}` : ""}
                   {g.metrics?.distanceKm ? ` · ${g.metrics.distanceKm} km` : ""}
+                  {g.metrics?.timeMinutes ? ` · ${g.metrics.timeMinutes} min` : ""}
+                  {g.metrics?.paceMinPerKm ? ` · ${g.metrics.paceMinPerKm} min/km` : ""}
+                  {g.metrics?.other ? ` · ${g.metrics.other}` : ""}
+                  {g.metrics?.weightKg ? ` · ${g.metrics.weightKg} kg` : ""}
+                  {g.metrics?.reps ? ` · ${g.metrics.reps} reps` : ""}
                 </p>
               </div>
-              <select
-                className="bg-card border border-border rounded px-2 py-1 text-xs shrink-0"
-                value={g.priority}
-                onChange={(e) => {
-                  const priority = Number(e.target.value) as 1 | 2 | 3 | 4 | 5;
-                  setForm({
-                    ...form,
-                    goals: form.goals.map((goal) =>
-                      goal.id === g.id ? { ...goal, priority } : goal
-                    ),
-                  });
-                }}
-              >
-                {[5, 4, 3, 2, 1].map((p) => (
-                  <option key={p} value={p}>
-                    P{p}
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
                 className="text-xs text-muted hover:text-red-400 shrink-0"
@@ -1249,10 +1333,9 @@ function ProfileEditor({
               value={newGoalType}
               onChange={(e) => setNewGoalType(e.target.value)}
             >
-              <option value="race">Race</option>
-              <option value="distance">Distance</option>
-              <option value="time">Time</option>
-              <option value="hypertrophy">Hypertrophy</option>
+              <option value="race">Race (running)</option>
+              <option value="distance">Distance (running)</option>
+              <option value="time">Time (running)</option>
               <option value="strength">Strength</option>
               <option value="endurance">Endurance</option>
               <option value="custom">Custom</option>
@@ -1263,25 +1346,72 @@ function ProfileEditor({
               value={newGoalDate}
               onChange={(e) => setNewGoalDate(e.target.value)}
             />
-            <input
-              type="number"
-              className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              placeholder="Target distance (km)"
-              value={newGoalDistance}
-              onChange={(e) => setNewGoalDistance(e.target.value)}
-            />
-            <select
-              className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              value={newGoalPriority}
-              onChange={(e) => setNewGoalPriority(Number(e.target.value))}
-            >
-              {[5, 4, 3, 2, 1].map((p) => (
-                <option key={p} value={p}>
-                  Priority {p} {p === 5 ? "(highest)" : ""}
-                </option>
-              ))}
-            </select>
           </div>
+
+          {/* Running targets */}
+          {(newGoalType === "race" || newGoalType === "distance" || newGoalType === "time") && (
+            <div className="grid grid-cols-3 gap-2">
+              <input
+                type="number"
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Distance (km)"
+                value={newGoalDistance}
+                onChange={(e) => setNewGoalDistance(e.target.value)}
+              />
+              <input
+                type="number"
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Time (min)"
+                value={newGoalTime}
+                onChange={(e) => setNewGoalTime(e.target.value)}
+              />
+              <input
+                type="number"
+                step="0.1"
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Pace (min/km)"
+                value={newGoalPace}
+                onChange={(e) => setNewGoalPace(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Strength targets */}
+          {newGoalType === "strength" && (
+            <div className="grid grid-cols-3 gap-2">
+              <input
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Exercise / movement"
+                value={newGoalExercise}
+                onChange={(e) => setNewGoalExercise(e.target.value)}
+              />
+              <input
+                type="number"
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Weight (kg)"
+                value={newGoalWeight}
+                onChange={(e) => setNewGoalWeight(e.target.value)}
+              />
+              <input
+                type="number"
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Reps"
+                value={newGoalReps}
+                onChange={(e) => setNewGoalReps(e.target.value)}
+              />
+            </div>
+          )}
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={newGoalIsTop}
+              onChange={(e) => setNewGoalIsTop(e.target.checked)}
+              className="rounded border-border"
+            />
+            Mark as top priority
+          </label>
+
           <button
             type="button"
             onClick={addGoal}
@@ -1657,127 +1787,62 @@ function ProgressView({
   );
 }
 
-// ==================== SYNC ====================
+// ==================== SYNC / STRAVA ====================
 function SyncView({ plan }: { plan: TrainingPlan | null }) {
-  const [importMsg, setImportMsg] = useState<string | null>(null);
-  const [importError, setImportError] = useState(false);
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImportMsg(null);
-    const result = await importData(file);
-    setImportError(!result.ok);
-    setImportMsg(result.message);
-    if (result.ok) {
-      // Reload the page so all state picks up the new data
-      setTimeout(() => window.location.reload(), 1200);
-    }
-    e.target.value = "";
-  };
-
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-semibold">Data & Sync</h2>
+        <h2 className="text-2xl font-semibold">Strava</h2>
         <p className="text-muted mt-1">
-          Your data stays private on this device. Use backup to move it safely.
+          Strava is the single source of truth for activity history.
         </p>
       </div>
 
-      {/* Privacy status */}
-      <div className="bg-card border border-border rounded-xl p-5 flex items-start gap-3">
-        <Shield className="w-5 h-5 text-success mt-0.5 flex-shrink-0" />
-        <div className="text-sm">
-          <p className="font-medium text-foreground">Fully private mode</p>
-          <p className="text-muted mt-1">
-            All your profile, plans and workouts are stored only in this browser.
-            Nothing is sent to any server. When you are ready we can connect your
-            own private cloud for automatic sync across devices.
-          </p>
-        </div>
-      </div>
-
-      {/* Backup / Restore */}
-      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold">Backup & Restore</h3>
-        <p className="text-sm text-muted">
-          Download a full backup of your data, or restore it on another device / browser.
-          Keep the file somewhere safe (it contains your training history and goals).
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => exportData()}
-            className="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" /> Download Backup
-          </button>
-
-          <label className="px-4 py-2.5 bg-background border border-border hover:bg-card-hover rounded-lg text-sm font-medium flex items-center gap-2 cursor-pointer">
-            <Upload className="w-4 h-4" /> Restore Backup
-            <input
-              type="file"
-              accept=".json,application/json"
-              className="hidden"
-              onChange={handleImport}
-            />
-          </label>
-        </div>
-        {importMsg && (
-          <p className={`text-sm ${importError ? "text-red-400" : "text-success"}`}>
-            {importMsg}
-          </p>
-        )}
-      </div>
-
-      {/* Garmin */}
-      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#000] flex items-center justify-center text-white font-bold text-sm">
-            G
-          </div>
-          <div>
-            <h3 className="font-semibold">Garmin Connect</h3>
-            <p className="text-xs text-muted">Push plans · Pull activities</p>
-          </div>
-        </div>
-        <p className="text-sm text-muted">
-          Export your training plan as a calendar file and import it into Garmin Connect
-          (or any calendar app).
-        </p>
-        <button
-          onClick={() => plan && downloadICS(plan)}
-          disabled={!plan}
-          className="px-4 py-2 bg-background border border-border rounded-lg text-sm flex items-center gap-2 hover:bg-card-hover disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Download className="w-4 h-4" /> Export Plan as .ics
-        </button>
-        {!plan && (
-          <p className="text-xs text-amber-400">Generate a training plan first to enable export.</p>
-        )}
-      </div>
-
-      {/* Strava */}
       <div className="bg-card border border-border rounded-xl p-6 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-[#FC4C02] flex items-center justify-center text-white font-bold text-sm">
             S
           </div>
           <div>
-            <h3 className="font-semibold">Strava</h3>
-            <p className="text-xs text-muted">Import activities · Analyze effort</p>
+            <h3 className="font-semibold">Connect Strava</h3>
+            <p className="text-xs text-muted">OAuth — coming next</p>
           </div>
         </div>
         <p className="text-sm text-muted">
-          Coming in a later update: connect Strava so completed runs automatically mark
-          plan workouts as done.
+          Connect your Strava account so Titan can read your activities and match them
+          to planned workouts automatically.
         </p>
         <button
+          type="button"
           disabled
-          className="px-4 py-2 bg-[#FC4C02]/60 text-white rounded-lg text-sm font-medium flex items-center gap-2 cursor-not-allowed"
+          className="px-4 py-2.5 bg-[#FC4C02]/80 text-white rounded-lg text-sm font-medium opacity-60 cursor-not-allowed"
         >
-          <Upload className="w-4 h-4" /> Connect Strava (later)
+          Connect Strava (soon)
         </button>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <h3 className="font-semibold">Import history</h3>
+        <p className="text-sm text-muted">
+          Until live connect is ready, you can import a Strava export (GPX/TCX/JSON)
+          so the engine has past volume and pace context.
+        </p>
+        <label className="inline-flex px-4 py-2.5 bg-background border border-border hover:bg-card-hover rounded-lg text-sm font-medium items-center gap-2 cursor-pointer">
+          Import Strava history
+          <input
+            type="file"
+            accept=".json,.gpx,.tcx,.fit,application/json"
+            className="hidden"
+            onChange={() => {
+              alert("Strava history import will be wired in the next integration step.");
+            }}
+          />
+        </label>
+        {plan && (
+          <p className="text-xs text-muted">
+            Active plan: {plan.name}. Matching imported activities to planned sessions comes with connect.
+          </p>
+        )}
       </div>
     </div>
   );

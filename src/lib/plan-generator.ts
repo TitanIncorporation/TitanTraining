@@ -76,32 +76,71 @@ export function generateTrainingPlan(
   const isRunner =
     profile.sports.includes("running") || profile.sports.includes("trail_running");
   const doesStrength = profile.sports.includes("strength");
-  const primaryIsTrail = profile.primarySport === "trail_running";
+  const primaryIsTrail =
+    profile.primarySport === "trail_running" ||
+    profile.runningBaseline?.preferredSurface === "trail";
   const hours = weeklyHours(profile);
-  const exp = profile.fitnessLevel || profile.experienceLevel || "intermediate";
+  const trainingDays = (profile as any).trainingDaysPerWeek || 5;
+  const exp =
+    profile.runningBaseline?.experience ||
+    profile.fitnessLevel ||
+    profile.experienceLevel ||
+    "intermediate";
+  const strengthExp =
+    profile.strengthBaseline?.experience ||
+    profile.fitnessLevel ||
+    profile.experienceLevel ||
+    "intermediate";
   const topGoals = highestPriorityGoals(profile.goals);
+  const approaches = profile.strengthBaseline?.trainingApproaches || ["heavy_duty"];
+  const useHeavyDuty =
+    approaches.includes("heavy_duty") || approaches.includes("mentzer" as any);
+  const physique = profile.strengthBaseline?.physiquePriorities || ["general"];
+  const focusChest = physique.includes("chest") || physique.includes("upper_chest");
+  const focusArms = physique.includes("arms");
 
-  // Experience-based running anchors (minutes)
+  // Scale running from baseline volume when available
+  const weeklyKm = profile.runningBaseline?.weeklyVolumeKm || 0;
+  const longestRecent = profile.runningBaseline?.longestRunLast30DaysKm || 0;
+
   const easyBase =
-    exp === "beginner" ? 35 : exp === "intermediate" ? 45 : exp === "advanced" ? 55 : 60;
+    weeklyKm > 0
+      ? Math.max(30, Math.round((weeklyKm * 0.2) * 6)) // ~min from share of volume
+      : exp === "beginner"
+        ? 35
+        : exp === "intermediate"
+          ? 45
+          : exp === "advanced"
+            ? 55
+            : 60;
   const longBase =
-    exp === "beginner" ? 60 : exp === "intermediate" ? 85 : exp === "advanced" ? 105 : 120;
+    longestRecent > 0
+      ? Math.round(Math.min(longestRecent * 6.5, longestRecent * 5 + 20)) // min approx
+      : exp === "beginner"
+        ? 60
+        : exp === "intermediate"
+          ? 85
+          : exp === "advanced"
+            ? 105
+            : 120;
   const qualityBase =
     exp === "beginner" ? 40 : exp === "intermediate" ? 50 : exp === "advanced" ? 60 : 70;
 
-  // How many sessions we can realistically schedule
+  // Session count from training days + hours
   let runDays = 0;
   if (isRunner) {
-    if (hours >= 8) runDays = 4;
-    else if (hours >= 5) runDays = 3;
+    if (trainingDays >= 6 || hours >= 8) runDays = 4;
+    else if (trainingDays >= 4 || hours >= 5) runDays = 3;
     else runDays = 2;
   }
 
   let strengthDays = 0;
   if (doesStrength) {
-    // Mentzer-style default → low frequency
-    if (hours >= 7) strengthDays = 2;
-    else strengthDays = 1;
+    if (useHeavyDuty) {
+      strengthDays = trainingDays >= 5 && hours >= 6 ? 2 : 1;
+    } else {
+      strengthDays = trainingDays >= 5 ? 2 : 1;
+    }
   }
 
   for (let w = 0; w < weeks; w++) {
@@ -230,10 +269,15 @@ Finish tired but not broken.`,
         let description = "";
 
         if (isUpperFocus) {
-          title = "Upper Body – High Intensity";
-          description = `High-intensity, low-volume approach.
-Warm-up thoroughly, then perform 1 hard working set per exercise (near technical failure).
-Rest 2–4 minutes between hard sets. Focus on progressive overload.`;
+          title = focusChest || focusArms ? "Upper Body – Priority Focus" : "Upper Body – High Intensity";
+          description = useHeavyDuty
+            ? `Heavy Duty style (from your Baseline approach).
+Warm-up thoroughly, then 1 hard working set per exercise (near technical failure).
+Rest 2–4 minutes. Progressive overload.
+${focusChest ? "Chest emphasized." : ""} ${focusArms ? "Arms emphasized." : ""}`.trim()
+            : `Strength session scaled to your Baseline.
+Warm-up, then quality working sets. Progressive overload.
+${focusChest ? "Chest emphasized." : ""} ${focusArms ? "Arms emphasized." : ""}`.trim();
 
           exercises = [
             {
@@ -358,8 +402,9 @@ Keep lower-body work controlled so it does not compromise the next long run.
     },
     workouts,
     weeklyStructure: `Polarized running (≥80% easy). Strength on Heavy Duty / low-volume principles. Deload in final week. Scaled to ${exp} level and ~${hours.toFixed(1)}h available.`,
-    notes: `Built from profile data. Priorities: ${goalSummary}.
-Running uses polarized principles (≥80% easy). Strength uses high-intensity, low-volume methods by default.
-Sessions scale to experience level and available time. Adjust based on recovery.`,
+    notes: `Built from Baseline. Priorities: ${goalSummary}.
+Running: polarized, volume anchored to your weekly km / longest run when provided.
+Strength approach: ${approaches.join(", ") || "default"}. Physique focus: ${physique.join(", ") || "general"}.
+Training days/week: ${trainingDays}. Adjust from recovery.`,
   };
 }
