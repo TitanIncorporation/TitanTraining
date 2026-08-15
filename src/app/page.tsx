@@ -471,21 +471,12 @@ function ProfileEditor({
         <p className="text-muted mt-1">This data drives the training plan generator.</p>
       </div>
 
-      {/* Basics */}
+      {/* Baseline – Generic */}
       <section className="space-y-4">
-        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Basics</h3>
+        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Baseline</h3>
         <div className="grid gap-4">
           <label className="block">
-            <span className="text-sm mb-1 block">Name</span>
-            <input
-              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="Your name"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm mb-1 block">Experience Level</span>
+            <span className="text-sm mb-1 block">Overall Experience</span>
             <select
               className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
               value={form.experienceLevel}
@@ -502,20 +493,166 @@ function ProfileEditor({
               <option value="elite">Elite</option>
             </select>
           </label>
+
+          <div>
+            <span className="text-sm mb-2 block">Sports to train</span>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ["running", "Road Running"],
+                ["trail_running", "Trail Running"],
+                ["strength", "Strength / Hypertrophy"],
+                ["conditioning", "Conditioning"],
+                ["cycling", "Cycling"],
+                ["triathlon", "Triathlon"],
+              ].map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.sports.includes(value as any)}
+                    onChange={(e) => {
+                      const sports = e.target.checked
+                        ? [...form.sports, value as any]
+                        : form.sports.filter((s) => s !== value);
+                      setForm({
+                        ...form,
+                        sports,
+                        primarySport: sports[0] || form.primarySport,
+                      });
+                    }}
+                    className="rounded border-border"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
           <label className="block">
-            <span className="text-sm mb-1 block">Primary Sport</span>
+            <span className="text-sm mb-1 block">Primary sport (highest priority)</span>
             <select
               className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
               value={form.primarySport}
-              onChange={(e) =>
-                setForm({ ...form, primarySport: e.target.value as any })
-              }
+              onChange={(e) => setForm({ ...form, primarySport: e.target.value as any })}
             >
               <option value="running">Road Running</option>
               <option value="trail_running">Trail Running</option>
-              <option value="strength">Strength</option>
+              <option value="strength">Strength / Hypertrophy</option>
+              <option value="conditioning">Conditioning</option>
+              <option value="cycling">Cycling</option>
             </select>
           </label>
+        </div>
+      </section>
+
+      {/* Running Baseline */}
+      <section className="space-y-4">
+        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Running Baseline</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-sm mb-1 block">Weekly volume (km)</span>
+            <input
+              type="number"
+              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              value={(form as any).runningBaseline?.weeklyVolumeKm ?? 40}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  runningBaseline: {
+                    experience: form.experienceLevel,
+                    weeklyVolumeKm: Number(e.target.value) || 0,
+                    longestRunLast30DaysKm: (form as any).runningBaseline?.longestRunLast30DaysKm ?? 15,
+                    preferredSurface: (form as any).runningBaseline?.preferredSurface ?? "mixed",
+                  },
+                } as any)
+              }
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm mb-1 block">Longest run last 30 days (km)</span>
+            <input
+              type="number"
+              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              value={(form as any).runningBaseline?.longestRunLast30DaysKm ?? 15}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  runningBaseline: {
+                    experience: form.experienceLevel,
+                    weeklyVolumeKm: (form as any).runningBaseline?.weeklyVolumeKm ?? 40,
+                    longestRunLast30DaysKm: Number(e.target.value) || 0,
+                    preferredSurface: (form as any).runningBaseline?.preferredSurface ?? "mixed",
+                  },
+                } as any)
+              }
+            />
+          </label>
+        </div>
+      </section>
+
+      {/* Strength Baseline */}
+      <section className="space-y-4">
+        <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Strength / Hypertrophy Baseline</h3>
+        <div className="grid gap-4">
+          <label className="block">
+            <span className="text-sm mb-1 block">Training approach</span>
+            <select
+              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              value={(form as any).strengthBaseline?.trainingApproach ?? "mentzer"}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  strengthBaseline: {
+                    experience: form.experienceLevel,
+                    trainingApproach: e.target.value,
+                    physiquePriorities: (form as any).strengthBaseline?.physiquePriorities ?? ["general"],
+                    preferredStyle: (form as any).strengthBaseline?.preferredStyle ?? "",
+                  },
+                } as any)
+              }
+            >
+              <option value="mentzer">Mike Mentzer / Heavy Duty (low volume, high intensity)</option>
+              <option value="moderate">Moderate volume</option>
+              <option value="higher_volume">Higher volume / higher frequency</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <div>
+            <span className="text-sm mb-2 block">Physique priorities</span>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ["general", "General muscle growth"],
+                ["upper_chest", "Upper chest"],
+                ["arms", "Arms"],
+                ["back", "Back"],
+                ["shoulders", "Shoulders"],
+                ["legs", "Legs"],
+              ].map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={((form as any).strengthBaseline?.physiquePriorities ?? []).includes(value)}
+                    onChange={(e) => {
+                      const current = (form as any).strengthBaseline?.physiquePriorities ?? [];
+                      const next = e.target.checked
+                        ? [...current, value]
+                        : current.filter((p: string) => p !== value);
+                      setForm({
+                        ...form,
+                        strengthBaseline: {
+                          experience: form.experienceLevel,
+                          trainingApproach: (form as any).strengthBaseline?.trainingApproach ?? "mentzer",
+                          physiquePriorities: next,
+                          preferredStyle: (form as any).strengthBaseline?.preferredStyle ?? "",
+                        },
+                      } as any);
+                    }}
+                    className="rounded border-border"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 

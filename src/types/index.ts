@@ -1,4 +1,14 @@
-export type Sport = "running" | "trail_running" | "strength" | "cycling" | "swimming" | "other";
+export type Sport =
+  | "running"
+  | "trail_running"
+  | "strength"
+  | "hypertrophy"
+  | "conditioning"
+  | "cycling"
+  | "swimming"
+  | "triathlon"
+  | "crossfit"
+  | "other";
 
 export type GoalType =
   | "race"
@@ -11,6 +21,8 @@ export type GoalType =
   | "endurance"
   | "custom";
 
+export type TrainingApproach = "mentzer" | "moderate" | "higher_volume" | "custom";
+
 export interface Goal {
   id: string;
   type: GoalType;
@@ -22,6 +34,7 @@ export interface Goal {
   metrics?: {
     distanceKm?: number;
     timeMinutes?: number;
+    paceMinPerKm?: number;
     weightKg?: number;
     reps?: number;
     other?: string;
@@ -41,33 +54,24 @@ export interface HRZones {
 }
 
 export interface Equipment {
-  // Access
   gymAccess: boolean;
   homeGym: boolean;
   outdoorAccess: boolean;
   trailAccess: boolean;
-
-  // Free weights
   barbell: boolean;
   dumbbells: boolean;
   kettlebells: boolean;
   weightPlates: boolean;
   rack: boolean;
   bench: boolean;
-
-  // Bodyweight / calisthenics
   pullUpBar: boolean;
   dipBars: boolean;
   parallettes: boolean;
-
-  // Machines & cardio
   machines: boolean;
   cableMachine: boolean;
   treadmill: boolean;
   indoorBike: boolean;
   rower: boolean;
-
-  // Other
   resistanceBands: boolean;
   weightedVest: boolean;
   plyoBox: boolean;
@@ -75,10 +79,25 @@ export interface Equipment {
   other: string[];
 }
 
+export interface RunningBaseline {
+  experience: "beginner" | "intermediate" | "advanced" | "elite";
+  weeklyVolumeKm: number;
+  longestRunLast30DaysKm: number;
+  preferredSurface: "road" | "trail" | "mixed";
+}
+
+export interface StrengthBaseline {
+  experience: "beginner" | "intermediate" | "advanced" | "elite";
+  trainingApproach: TrainingApproach;
+  physiquePriorities: string[]; // e.g. ["upper_chest", "arms", "general"]
+  preferredStyle: string; // free text or tags
+}
+
 export interface AthleteProfile {
   name: string;
   experienceLevel: "beginner" | "intermediate" | "advanced" | "elite";
   sports: Sport[];
+  sportPriorities: { sport: Sport; priority: number }[]; // 1 = highest
   primarySport: Sport;
   goals: Goal[];
   hrZones: HRZones;
@@ -92,6 +111,8 @@ export interface AthleteProfile {
     saturday: number;
     sunday: number;
   };
+  runningBaseline?: RunningBaseline;
+  strengthBaseline?: StrengthBaseline;
   constraints: string;
   notes: string;
   createdAt: string;
