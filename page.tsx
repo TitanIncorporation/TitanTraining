@@ -311,7 +311,7 @@ function Dashboard({
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Current Plan" value={plan ? "Active" : "None"} sub={plan?.name} />
+        <StatCard label="Current Plan" value={plan ? "Active" : "None"} sub={plan?.name ?? undefined} />
         <StatCard
           label="Completion"
           value={totalPlanned ? `${Math.round((completedCount / totalPlanned) * 100)}%` : "—"}
@@ -323,8 +323,8 @@ function Dashboard({
           sub="Highest priority"
         />
         <StatCard
-          label="Experience"
-          value={profile.experienceLevel}
+          label="Fitness level"
+          value={((profile as any).fitnessLevel || profile.experienceLevel || "—") as string}
           sub={`${profile.sports.length} sports`}
         />
       </div>
@@ -397,13 +397,14 @@ function StatCard({
   sub,
 }: {
   label: string;
-  value: string;
+  value: string | number | undefined;
   sub?: string;
 }) {
+  const display = value === undefined || value === null ? "—" : String(value);
   return (
     <div className="bg-card border border-border rounded-xl p-4">
       <p className="text-xs text-muted uppercase tracking-wide">{label}</p>
-      <p className="text-xl font-semibold mt-1 truncate capitalize">{value}</p>
+      <p className="text-xl font-semibold mt-1 truncate capitalize">{display}</p>
       {sub && <p className="text-xs text-muted mt-0.5 truncate">{sub}</p>}
     </div>
   );
@@ -418,7 +419,7 @@ function ProfileEditor({
   onSave: (p: AthleteProfile) => void;
 }) {
   const [form, setForm] = useState<AthleteProfile>(
-    profile || {
+    profile || ({
       name: "",
       fitnessLevel: "intermediate",
       experienceLevel: "intermediate",
@@ -460,7 +461,7 @@ function ProfileEditor({
       notes: "",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    }
+    } as AthleteProfile)
   );
 
   const [newGoalTitle, setNewGoalTitle] = useState("");
@@ -504,9 +505,9 @@ function ProfileEditor({
               onChange={(e) =>
                 setForm({
                   ...form,
-                  fitnessLevel: e.target.value as any,
-                  experienceLevel: e.target.value as any,
-                })
+                  fitnessLevel: e.target.value,
+                  experienceLevel: e.target.value,
+                } as AthleteProfile)
               }
             >
               <option value="beginner">Beginner</option>
