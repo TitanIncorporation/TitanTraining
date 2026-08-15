@@ -252,7 +252,7 @@ Finish feeling tired but not destroyed.`,
         const repsSecondary = hypertrophyFocus ? "10-15" : "8-12";
 
         // Equipment-aware exercise pool
-        const hasGym = profile.equipment.gymAccess || profile.equipment.freeWeights;
+        const hasGym = profile.equipment.gymAccess || profile.equipment.barbell || profile.equipment.dumbbells || profile.equipment.rack;
         const hasPullup = profile.equipment.pullUpBar;
         const hasBands = profile.equipment.resistanceBands;
 

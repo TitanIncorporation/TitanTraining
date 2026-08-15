@@ -235,6 +235,7 @@ export default function TitanTraining() {
               onGenerate={handleGeneratePlan}
               generating={generating}
               onToggleComplete={toggleWorkoutComplete}
+              onOpenWorkout={setSelectedWorkout}
             />
           )}
           {tab === "progress" && <ProgressView plan={plan} workouts={workouts} profile={profile} />}
@@ -625,33 +626,79 @@ function ProfileEditor({
       {/* Equipment */}
       <section className="space-y-4">
         <h3 className="font-medium text-sm text-muted uppercase tracking-wide">Equipment</h3>
-        <div className="grid grid-cols-2 gap-3">
-          {(
-            [
-              ["gymAccess", "Gym Access"],
-              ["homeGym", "Home Gym"],
-              ["freeWeights", "Free Weights"],
-              ["machines", "Machines"],
-              ["resistanceBands", "Resistance Bands"],
-              ["pullUpBar", "Pull-up Bar"],
-              ["treadmill", "Treadmill"],
-              ["trailAccess", "Trail Access"],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.equipment[key]}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    equipment: { ...form.equipment, [key]: e.target.checked },
-                  })
-                }
-                className="rounded border-border"
-              />
-              {label}
-            </label>
+        <div className="space-y-4">
+          {[
+            {
+              title: "Access",
+              items: [
+                ["gymAccess", "Gym Access"],
+                ["homeGym", "Home Gym"],
+                ["outdoorAccess", "Outdoor / Park"],
+                ["trailAccess", "Trail Access"],
+              ],
+            },
+            {
+              title: "Free Weights",
+              items: [
+                ["barbell", "Barbell"],
+                ["dumbbells", "Dumbbells"],
+                ["kettlebells", "Kettlebells"],
+                ["weightPlates", "Weight Plates"],
+                ["rack", "Rack / Squat Rack"],
+                ["bench", "Bench"],
+              ],
+            },
+            {
+              title: "Bodyweight",
+              items: [
+                ["pullUpBar", "Pull-up Bar"],
+                ["dipBars", "Dip Bars"],
+                ["parallettes", "Parallettes"],
+              ],
+            },
+            {
+              title: "Machines & Cardio",
+              items: [
+                ["machines", "Weight Machines"],
+                ["cableMachine", "Cable Machine"],
+                ["treadmill", "Treadmill"],
+                ["indoorBike", "Indoor Bike"],
+                ["rower", "Rower"],
+              ],
+            },
+            {
+              title: "Other",
+              items: [
+                ["resistanceBands", "Resistance Bands"],
+                ["weightedVest", "Weighted Vest"],
+                ["plyoBox", "Plyo Box"],
+                ["medicineBall", "Medicine Ball"],
+              ],
+            },
+          ].map((group) => (
+            <details key={group.title} className="bg-background border border-border rounded-lg" open>
+              <summary className="px-3 py-2 text-sm font-medium cursor-pointer select-none">
+                {group.title}
+              </summary>
+              <div className="grid grid-cols-2 gap-2 px-3 pb-3">
+                {group.items.map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(form.equipment as any)[key] || false}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          equipment: { ...form.equipment, [key]: e.target.checked },
+                        })
+                      }
+                      className="rounded border-border"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </details>
           ))}
         </div>
       </section>
@@ -686,12 +733,14 @@ function PlanView({
   onGenerate,
   generating,
   onToggleComplete,
+  onOpenWorkout,
 }: {
   plan: TrainingPlan | null;
   profile: AthleteProfile | null;
   onGenerate: () => void;
   generating: boolean;
   onToggleComplete: (id: string) => void;
+  onOpenWorkout: (w: Workout) => void;
 }) {
   if (!plan) {
     return (
@@ -756,7 +805,7 @@ function PlanView({
           </h3>
           <div className="space-y-2">
             {weekWorkouts.map((w) => (
-              <WorkoutCard key={w.id} workout={w} onToggle={onToggleComplete} onOpen={setSelectedWorkout} />
+              <WorkoutCard key={w.id} workout={w} onToggle={onToggleComplete} onOpen={onOpenWorkout} />
             ))}
           </div>
         </div>
