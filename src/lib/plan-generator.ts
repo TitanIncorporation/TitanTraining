@@ -191,12 +191,10 @@ This session builds mitochondrial density and fatigue resistance without high st
               "tempo",
               "running",
               "Tempo / Threshold",
-              `Warm-up 12–15 min easy.
-Main set: ${Math.round(16 + w * 3)} min continuous at tempo effort (high Zone 3 / low Zone 4).
-You should finish “comfortably hard”, not destroyed.
+              `Warm-up 12–15 min Z1–Z2.
+Main: ${Math.round(16 + w * 3)} min continuous tempo (top Z3 / low Z4) — talk in short phrases only.
 Cool-down 8–10 min easy.
-
-Purpose: raise lactate threshold and improve sustainable race pace.`,
+Target: threshold durability for your priority race. If goal pace is set, tempo ≈ slightly slower than goal 10k effort.`,
               {
                 plannedDurationMin: qDur,
                 plannedIntensity: "z3",
@@ -235,12 +233,9 @@ Stop if form collapses.`,
           primaryIsTrail ? "trail_run" : "long_run",
           primaryIsTrail ? "trail_running" : "running",
           primaryIsTrail ? "Long Trail Run" : "Long Run",
-          `Endurance cornerstone. Mostly Zone 2.
-${primaryIsTrail ? "Include elevation when possible. Practice fueling and technical downhill control." : "Practice fueling if longer than 75–80 min."}
-Optional: a few 20–30 s pick-ups in the second half if feeling good.
-
-Purpose: fat oxidation, connective tissue resilience, mental durability.
-Finish tired but not broken.`,
+          `Long run ${longDur} min (~Z2). Build from Baseline longest (${longestRecent || "n/a"} km).
+${primaryIsTrail ? "Trail: seek elevation; practice fueling + downhill control." : "Road: steady aerobic; fuel if >75 min."}
+Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
           {
             plannedDurationMin: longDur,
             plannedDistanceKm:
@@ -411,7 +406,17 @@ Keep lower-body work controlled so it does not compromise the next long run.
       goals: profile.goals,
     },
     workouts,
-    weeklyStructure: `Polarized running (≥80% easy). Strength on Heavy Duty / low-volume principles. Deload in final week. Scaled to ${exp} level and ~${hours.toFixed(1)}h available.`,
-    notes: `${previousPlan ? "Updated from Baseline + completed history." : "Built from your Baseline."} Priority: ${goalSummary || "general development"}. Structure: ~${runDays} run + ${strengthDays} strength sessions/week (${approaches.join("/") || "default"} approach), polarized running (≥80% easy), deload in final week. Available ~${hours.toFixed(1)}h across ${trainingDays} days.`,
+    weeklyStructure: `${isRunner ? `${runDays}× run (mostly Z2 + 1 quality + long)` : "No run"}${doesStrength ? ` · ${strengthDays}× strength (${approaches.join("/") || "default"})` : ""} · deload week ${weeks} · ${exp} · ~${hours.toFixed(1)}h/wk`,
+    notes: [
+      previousPlan ? "Update: kept completed past sessions; forward block rebuilt from Baseline." : "New block from Baseline only (no hard-coded athlete defaults).",
+      `Goal focus: ${goalSummary || "general development"}.`,
+      isRunner
+        ? `Running: ${runDays} days/week · easy Z2 base · 1 quality (tempo or intervals) · long run progressing from ~${Math.round(longBase * 0.85)} toward ~${longBase} min · weekly volume anchor ${weeklyKm || "n/a"} km · surface ${primaryIsTrail ? "trail bias" : "road"}.`
+        : "Running: not selected in Baseline.",
+      doesStrength
+        ? `Strength: ${strengthDays} day(s)/week · approach ${approaches.join(", ") || "default"} · physique ${physique.join(", ") || "full_body"} · equipment-constrained · lower body managed around long-run days.`
+        : "Strength: not selected.",
+      `Load budget: ~${hours.toFixed(1)} h/week across ${trainingDays} training days. Final week = deload (~25% less intensity/volume).`,
+    ].join(" "),
   };
 }

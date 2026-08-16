@@ -165,25 +165,24 @@ export default function TitanTraining() {
   }
 
   const handleSaveProfile = async (updated: AthleteProfile) => {
-    // Data save is priority #1: local first, then cloud if available
     try {
       saveProfile(updated);
       setProfile(updated);
-      try {
-        const { data: { user: u } } = await supabase.auth.getUser();
-        if (u) {
-          await supabase.from("profiles").upsert({
-            id: u.id,
-            data: updated,
-            updated_at: new Date().toISOString(),
-          });
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (u) {
+        const { error } = await supabase.from("profiles").upsert({
+          id: u.id,
+          data: updated,
+          updated_at: new Date().toISOString(),
+        });
+        if (error) {
+          console.warn("Cloud profile save error", error.message);
+          // local already saved — still success for user
         }
-      } catch (cloudErr) {
-        console.warn("Cloud profile save skipped", cloudErr);
       }
     } catch (err) {
       console.error("Profile save failed", err);
-      alert("Could not save profile. Please try again.");
+      alert("Could not save profile locally. Please try again.");
     }
   };
 
@@ -255,8 +254,8 @@ export default function TitanTraining() {
       <aside className="w-full md:w-64 bg-card border-b md:border-b-0 md:border-r border-border flex-shrink-0">
         <div className="p-5 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center">
-              <Mountain className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center overflow-hidden">
+              <img src="/favicon.svg" alt="Titan" className="w-8 h-8" />
             </div>
             <div>
               <h1 className="font-semibold text-lg tracking-tight">Titan Training</h1>
@@ -1601,6 +1600,8 @@ function ProfileEditor({
 
           {/* Running targets */}
           {newGoalType === "race" && (
+            <div className="space-y-1">
+            <p className="text-[10px] text-muted">Distance (km) · Time (hh:mm) · Pace per km (mm:ss only — example format 3:56, field stays empty until you type)</p>
             <div className="grid grid-cols-3 gap-2">
               <input
                 type="number"
@@ -1619,12 +1620,13 @@ function ProfileEditor({
                 type="number"
                 step="0.1"
                 className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="3:56"
-                title="Pace always per km, format mm:ss e.g. 3:56"
+                placeholder="mm:ss"
+                aria-label="Target pace per km as minutes:seconds"
+                inputMode="text"
                 value={newGoalPace}
                 onChange={(e) => setNewGoalPace(e.target.value)}
               />
-              <p className="text-[10px] text-muted col-span-3 -mt-1">Pace is always min/km as mm:ss (e.g. 3:56)</p>
+            </div>
             </div>
           )}
           {newGoalType === "trail_race" && (
@@ -1814,7 +1816,7 @@ function ProfileEditor({
 
       {savedFlash && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-success text-white text-sm font-medium shadow-lg">
-          Profile saved
+          Profile saved (device + cloud if available)
         </div>
       )}
       <div className="sticky bottom-0 pt-4 pb-2 bg-background/95 backdrop-blur border-t border-border -mx-1 px-1 z-10">
@@ -1909,9 +1911,11 @@ function PlanView({
       </div>
 
       {plan.notes && (
-        <p className="text-sm text-muted bg-card border border-border rounded-lg px-4 py-3 leading-snug">
-          {plan.notes.split("\n")[0]}
-        </p>
+        <div className="text-sm text-muted bg-card border border-border rounded-lg px-4 py-3 leading-relaxed space-y-1">
+          {plan.notes.split(/(?<=\.)\s+/).filter(Boolean).map((sentence, i) => (
+            <p key={i}>{sentence.trim()}</p>
+          ))}
+        </div>
       )}
 
       {/* Calendar */}

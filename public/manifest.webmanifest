@@ -1,0 +1,12 @@
+{
+  "name": "Titan Training",
+  "short_name": "Titan",
+  "description": "Personal training plans",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0f14",
+  "theme_color": "#3b82f6",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
