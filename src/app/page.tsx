@@ -609,7 +609,8 @@ function ProfileEditor({
   );
 
   const [newGoalTitle, setNewGoalTitle] = useState("");
-  const [newGoalType, setNewGoalType] = useState<string>("race");
+  const [newGoalType, setNewGoalType] = useState<string>("running");
+  const [goalNameError, setGoalNameError] = useState(false);
   const [newGoalDate, setNewGoalDate] = useState("");
   const [newGoalDistance, setNewGoalDistance] = useState("");
   const [newGoalTime, setNewGoalTime] = useState("");
@@ -705,10 +706,15 @@ function ProfileEditor({
   };
 
   const addGoal = () => {
-    if (!newGoalTitle.trim()) return;
-    const isRoadRace = newGoalType === "race";
-    const isTrail = newGoalType === "trail_race";
+    if (!newGoalTitle.trim()) {
+      setGoalNameError(true);
+      return;
+    }
+    setGoalNameError(false);
+    const isRoadRace = newGoalType === "running" || newGoalType === "race";
+    const isTrail = newGoalType === "trail_running" || newGoalType === "trail_race";
     const isStrength = newGoalType === "strength";
+    const isCustom = newGoalType === "custom";
     // parse hh:mm to minutes for storage
     let timeMinutes: number | undefined;
     if (newGoalTime.trim()) {
@@ -721,11 +727,11 @@ function ProfileEditor({
     }
     const goal: Goal = {
       id: Math.random().toString(36).slice(2),
-      type: (isTrail ? "race" : newGoalType) as any,
+      type: (isTrail || isRoadRace ? "race" : isCustom ? "custom" : newGoalType) as any,
       title: newGoalTitle.trim(),
       priority: (newGoalIsTop ? 5 : 3) as 1 | 2 | 3 | 4 | 5,
       targetDate: newGoalDate || undefined,
-      sport: isTrail ? "trail_running" : isRoadRace ? "running" : isStrength ? "strength" : undefined,
+      sport: isTrail ? "trail_running" : isRoadRace ? "running" : isStrength ? "strength" : isCustom ? undefined : undefined,
       metrics: isRoadRace || isTrail
         ? {
             distanceKm: newGoalDistance ? Number(newGoalDistance) : undefined,
@@ -1573,20 +1579,30 @@ function ProfileEditor({
 
         <div className="space-y-2 border-t border-border pt-4">
           <p className="text-sm font-medium">Add goal</p>
-          <input
-            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
-            placeholder="Name (e.g. Valencia Marathon)"
-            value={newGoalTitle}
-            onChange={(e) => setNewGoalTitle(e.target.value)}
-          />
+          <div>
+            <input
+              className={`w-full bg-background border rounded-lg px-3 py-2 text-sm ${
+                goalNameError ? "border-red-500 ring-1 ring-red-500" : "border-border"
+              }`}
+              placeholder="Name (required)"
+              value={newGoalTitle}
+              onChange={(e) => {
+                setNewGoalTitle(e.target.value);
+                if (e.target.value.trim()) setGoalNameError(false);
+              }}
+            />
+            {goalNameError && (
+              <p className="text-xs text-red-500 mt-1">Name is required to add a goal.</p>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <select
               className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
               value={newGoalType}
               onChange={(e) => setNewGoalType(e.target.value)}
             >
-              <option value="race">Race (road)</option>
-              <option value="trail_race">Trail running race</option>
+              <option value="running">Running</option>
+              <option value="trail_running">Trail Running</option>
               <option value="strength">Strength</option>
               <option value="custom">Custom</option>
             </select>
@@ -1599,7 +1615,7 @@ function ProfileEditor({
           </div>
 
           {/* Running targets */}
-          {newGoalType === "race" && (
+          {newGoalType === "running" && (
             <div className="space-y-1">
             <p className="text-[10px] text-muted">Distance (km) · Time (hh:mm) · Pace/km (mm:ss)</p>
             <div className="grid grid-cols-3 gap-2">
@@ -1632,7 +1648,7 @@ function ProfileEditor({
             </div>
             </div>
           )}
-          {newGoalType === "trail_race" && (
+          {newGoalType === "trail_running" && (
             <div className="grid grid-cols-3 gap-2">
               <input
                 type="number"

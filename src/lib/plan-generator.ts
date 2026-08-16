@@ -483,17 +483,19 @@ Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
       goals: profile.goals,
     },
     workouts,
-    weeklyStructure: `${isRunner ? `${runDays}× run (mostly Z2 + 1 quality + long)` : "No run"}${doesStrength ? ` · ${strengthDays}× strength (${approachLabels.join(", ") || "default"})` : ""} · deload week ${weeks} · ${labelApproach(String(exp))} · ~${hours.toFixed(1)}h/wk`,
+    weeklyStructure: `${isRunner ? `${runDays}× Run (mostly Z2 + 1 quality + long)` : "No run"}${doesStrength ? ` · ${strengthDays}× Strength (${approachLabels.join(", ") || "Default"})` : ""} · Deload week ${weeks} · ${labelApproach(String(exp))} · ~${hours.toFixed(1)}h/wk`,
     notes: [
-      previousPlan ? "Update: kept completed past sessions; forward block rebuilt from Baseline." : "New block from Baseline only (no hard-coded athlete defaults).",
-      `Goal focus: ${goalSummary || "general development"}.`,
+      previousPlan
+        ? "Update: kept completed past sessions; forward block rebuilt from Baseline."
+        : "New block from Baseline only (no hard-coded athlete defaults).",
+      `Goal focus: ${goalSummary || "General development"}.`,
       isRunner
-        ? `Running: ${runDays} days/week · easy Z2 base · 1 quality (tempo or intervals) · long run progressing from ~${Math.round(longBase * 0.85)} toward ~${longBase} min · weekly volume anchor ${weeklyKm || "n/a"} km · surface ${primaryIsTrail ? "trail bias" : "road"}.`
+        ? `Running: ${runDays} days/week · easy Z2 base · 1 quality (tempo or intervals) · long run progressing from ~${Math.round(longBase * 0.85)} toward ~${longBase} min · weekly volume anchor ${weeklyKm || "n/a"} km · surface ${primaryIsTrail ? "Trail bias" : "Road"}.`
         : "Running: not selected in Baseline.",
       doesStrength
-        ? `Strength: ${strengthDays} day(s)/week · approach ${approachLabels.join("; ") || "default"} · physique ${physiqueLabels.join(", ") || "Full body"} · equipment-constrained · lower body managed around long-run days.`
+        ? `Strength: ${strengthDays} day(s)/week · approach ${approachLabels.join("; ") || "Default"} · physique ${physiqueLabels.join(", ") || "Full body"} · equipment-constrained · lower body managed around long-run days.`
         : "Strength: not selected.",
-      `Load budget: ~${hours.toFixed(1)} h/week across ${trainingDays} training days. Final week = deload (~25% less intensity/volume).`,
+      `Load budget: ~${hours.toFixed(1)} h/week across ${trainingDays} training days. Final week = Deload (~25% less intensity/volume).`,
     ].join(" "),
   };
 }
