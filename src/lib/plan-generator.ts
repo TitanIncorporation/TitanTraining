@@ -153,11 +153,60 @@ function highestPriorityGoals(goals: Goal[], limit = 3): Goal[] {
  * - Protects recovery between hard sessions
  * - Scales to experience level
  */
+
+/** Max 3 lines + constraint callouts */
+function buildPlanNotes(o: {
+  goalSummary: string;
+  goalDateLine?: string;
+  phaseLabel?: string;
+  sport1: string | null;
+  sport2: string | null;
+  isRunner: boolean;
+  doesStrength: boolean;
+  runDays: number;
+  strengthDays: number;
+  hours: number;
+  maxAvailMin: number;
+  hasMarathonGoal: boolean;
+  constraintWarnings: string[];
+  profileConstraints: string;
+  previousPlan: boolean;
+}): string {
+  const sports = [o.sport1, o.sport2].filter(Boolean).join(" + ") || "training";
+  const goalBit = o.goalDateLine
+    ? `${o.goalSummary} (${o.goalDateLine})`
+    : o.goalSummary;
+  const phaseBit = o.phaseLabel ? ` · ${o.phaseLabel}` : "";
+  const line1 = `${goalBit}${phaseBit} · ${sports}.`;
+  const line2 = o.isRunner
+    ? `Up to ${o.runDays} run day(s)/week` +
+      (o.doesStrength ? ` + ${o.strengthDays} strength` : "") +
+      ` · ~${o.hours.toFixed(1)} h/wk · 1 session/day, capped to daily hours.`
+    : o.doesStrength
+      ? `${o.strengthDays} strength day(s)/week · ~${o.hours.toFixed(1)} h/wk · capped to daily hours.`
+      : `~${o.hours.toFixed(1)} h/wk capacity.`;
+  const callouts: string[] = [];
+  if (o.profileConstraints) {
+    callouts.push(`Constraint: ${o.profileConstraints}`);
+  }
+  for (const w of o.constraintWarnings) {
+    if (w && !callouts.includes(w)) callouts.push(w);
+  }
+  if (o.hasMarathonGoal && (o.hours < 5 || o.maxAvailMin < 75)) {
+    callouts.push(
+      "Constraint callout: A marathon-level goal with the current availability is not compatible with standard long-run progression. Sessions are capped to your stated availability."
+    );
+  }
+  const lines = [line1, line2, ...callouts].filter(Boolean);
+  return lines.join("\n");
+}
+
 export function generateTrainingPlan(
   profile: AthleteProfile,
-  weeks: number = 4,
+  weeksInput: number = 4,
   previousPlan?: TrainingPlan
 ): TrainingPlan {
+  let weeks = weeksInput;
   const start = startOfWeek(new Date(), { weekStartsOn: 1 });
   const workouts: Workout[] = [];
 
@@ -180,6 +229,68 @@ export function generateTrainingPlan(
     profile.experienceLevel ||
     "intermediate";
   const topGoals = highestPriorityGoals(profile.goals);
+  // Dated objectives (race / goal with targetDate) drive block length & phase
+  // Only TOP-priority dated goal drives periodization (taper/peak).
+  // Other dated races = training stimuli (B/C races), not full tapers — avoids monthly taper trap.
+  const allDated = (profile.goals || [])
+    .filter((g) => g.targetDate)
+    .map((g) => ({
+      goal: g,
+      daysOut: Math.ceil(
+        (parseISO(g.targetDate as string).getTime() - new Date().setHours(0, 0, 0, 0)) /
+          (1000 * 60 * 60 * 24)
+      ),
+    }))
+    .filter((x) => x.daysOut >= 0);
+
+  const maxPriority = (profile.goals || []).reduce(
+    (m, g) => Math.max(m, g.priority || 0),
+    0
+  );
+  // Top tier: highest priority among goals that have a date; if none dated at max, use highest dated priority
+  const datedMaxP = allDated.reduce((m, x) => Math.max(m, x.goal.priority || 0), 0);
+  const primaryDated =
+    allDated
+      .filter((x) => x.goal.priority === datedMaxP && datedMaxP > 0)
+      .sort((a, b) => a.daysOut - b.daysOut)[0] || null;
+
+  // Secondary dated events (not the A-goal) → treat as training races inside the block
+  const trainingRaces = allDated.filter(
+    (x) => !primaryDated || x.goal.id !== primaryDated.goal.id
+  );
+
+  const weeksToGoal = primaryDated
+    ? Math.max(1, Math.ceil(primaryDated.daysOut / 7))
+    : null;
+  if (weeksToGoal != null) {
+    weeks = Math.min(Math.max(weeks, 1), Math.min(8, weeksToGoal));
+    if (weeksToGoal <= 4) weeks = Math.min(weeksToGoal, 4);
+  }
+  type Phase = "base" | "build" | "peak" | "taper" | "race" | "general";
+  let trainingPhase: Phase = "general";
+  if (weeksToGoal != null) {
+    if (weeksToGoal <= 1) trainingPhase = "race";
+    else if (weeksToGoal <= 3) trainingPhase = "taper";
+    else if (weeksToGoal <= 8) trainingPhase = "peak";
+    else if (weeksToGoal <= 16) trainingPhase = "build";
+    else trainingPhase = "base";
+  }
+  const phaseLabel =
+    trainingPhase === "general"
+      ? undefined
+      : trainingPhase === "race"
+        ? "Race week (A-goal)"
+        : trainingPhase === "taper"
+          ? `Taper to A-goal · ${weeksToGoal} wk`
+          : trainingPhase === "peak"
+            ? `Peak toward A-goal · ${weeksToGoal} wk`
+            : trainingPhase === "build"
+              ? `Build toward A-goal · ${weeksToGoal} wk`
+              : `Base · ${weeksToGoal} wk to A-goal`;
+  const goalDateLine = primaryDated
+    ? format(parseISO(primaryDated.goal.targetDate as string), "d MMM yyyy")
+    : undefined;
+
   const approaches = profile.strengthBaseline?.trainingApproaches || ["heavy_duty"];
   const approachOther = (profile.strengthBaseline as any)?.trainingApproachOther as string | undefined;
   const customSplit = parseCustomApproach(approachOther);
@@ -265,6 +376,15 @@ export function generateTrainingPlan(
     constraintWarnings.push(
       "Constraint callout: A marathon-level goal with the current availability is not compatible with standard long-run progression. Sessions are capped to your stated availability."
     );
+  }
+  if (trainingRaces.length > 0) {
+    const names = trainingRaces
+      .slice(0, 3)
+      .map((t) => t.goal.title)
+      .join(", ");
+    constraintWarnings.push(
+      `Training races (not tapered): ${names}. Treated as hard sessions inside the A-goal plan.`
+    );
   } else if (hours > 0 && hours < 3 && isRunner) {
     constraintWarnings.push(
       "Constraint callout: Current weekly availability is low for race-focused volume. Sessions are capped to your stated availability."
@@ -273,8 +393,23 @@ export function generateTrainingPlan(
 
   for (let w = 0; w < weeks; w++) {
     const weekStart = addWeeks(start, w);
-    const isDeload = w === weeks - 1;
-    const progress = isDeload ? 0.75 : 1 + w * 0.06;
+    // Phase-aware load: taper/race reduce volume; build/peak progress carefully
+    let isDeload = w === weeks - 1 && trainingPhase !== "taper" && trainingPhase !== "race";
+    if (trainingPhase === "taper") {
+      // Progressive volume drop toward race
+      isDeload = false;
+    }
+    let progress = 1 + w * 0.06;
+    if (trainingPhase === "taper") {
+      progress = Math.max(0.55, 0.9 - w * 0.12);
+    } else if (trainingPhase === "race") {
+      progress = 0.5;
+    } else if (trainingPhase === "peak") {
+      progress = 1 + w * 0.04;
+    } else if (trainingPhase === "base") {
+      progress = 0.85 + w * 0.05;
+    }
+    if (isDeload) progress = Math.min(progress, 0.75);
 
     // Per-day minute budgets (NOT weekly total) — one session per day max
     const dayBudget: Record<number, number> = {};
@@ -309,6 +444,34 @@ export function generateTrainingPlan(
       usedDays.add(d);
       dayBudget[d] = Math.max(0, (dayBudget[d] || 0) - mins);
     };
+
+    // Secondary dated goals = training races (no full taper) — hard long/quality that day only
+    for (const tr of trainingRaces) {
+      const raceDate = parseISO(tr.goal.targetDate as string);
+      const raceWeekStart = startOfWeek(raceDate, { weekStartsOn: 1 });
+      if (format(raceWeekStart, "yyyy-MM-dd") !== format(weekStart, "yyyy-MM-dd")) continue;
+      const dayOffset = Math.min(6, Math.max(0, Math.round((raceDate.getTime() - weekStart.getTime()) / 86400000)));
+      if (usedDays.has(dayOffset)) continue;
+      const dayMin = dayBudget[dayOffset] ?? dayAvailabilityMin(profile, dayOffset);
+      if (dayMin < 20) continue;
+      const raceDur = Math.min(Math.max(dayMin, 30), Math.min(dayMin, Math.round(longBaseCapped * 0.95)));
+      const raceTitle = tr.goal.title || "Training race";
+      workouts.push(
+        createWorkout(
+          format(raceDate, "yyyy-MM-dd"),
+          primaryIsTrail || (tr.goal.sport || "").includes("trail") ? "trail_run" : "long_run",
+          primaryIsTrail ? "trail_running" : "running",
+          `Training race · ${raceTitle}`,
+          `B/C race used as training (not an A-goal taper). Effort controlled; recover next day. Day budget ${dayMin} min.`,
+          {
+            plannedDurationMin: raceDur,
+            plannedIntensity: "z3",
+            plannedDistanceKm: tr.goal.metrics?.distanceKm,
+          }
+        )
+      );
+      book(dayOffset, raceDur);
+    }
 
     // --- RUNNING (at most one session per day) ---
     if (isRunner) {
@@ -597,13 +760,47 @@ export function generateTrainingPlan(
     }
   }
 
+  // Keep ALL past & completed sessions; only future planned sessions were regenerated above
+  // Never keep brand-new planned sessions in the past
+  {
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    for (let i = workouts.length - 1; i >= 0; i--) {
+      if (workouts[i].date < todayStr && !workouts[i].completed) {
+        workouts.splice(i, 1);
+      }
+    }
+  }
+
   if (previousPlan?.workouts?.length) {
     const todayStr = format(new Date(), "yyyy-MM-dd");
-    const carried = previousPlan.workouts.filter((w) => w.completed && w.date < todayStr);
-    const keys = new Set(workouts.map((w) => w.date + "|" + w.title));
-    for (const w of carried) {
+    const idSet = new Set(workouts.map((w) => w.id));
+    const dateTitle = new Set(workouts.map((w) => w.date + "|" + w.title));
+    for (const w of previousPlan.workouts) {
+      const isPast = w.date < todayStr;
+      const isTodayDone = w.date === todayStr && w.completed;
+      if (!(isPast || isTodayDone || w.completed)) continue;
+      if (idSet.has(w.id)) continue;
       const key = w.date + "|" + w.title;
-      if (!keys.has(key)) workouts.push(w);
+      if (dateTitle.has(key)) continue;
+      workouts.push(w);
+      idSet.add(w.id);
+      dateTitle.add(key);
+    }
+    // Drop any newly generated sessions that fall in the past (should not happen, belt-and-braces)
+    const futureOrToday = workouts.filter(
+      (w) => w.date >= todayStr || w.completed || w.date < todayStr
+    );
+    // Prefer: keep past from history; for dates >= today keep new planned unless completed already carried
+    workouts.length = 0;
+    const past = futureOrToday.filter((w) => w.date < todayStr || w.completed);
+    const futureNew = futureOrToday.filter((w) => w.date >= todayStr && !w.completed);
+    // Avoid duplicate dates for future: one planned per day from new gen (already enforced in loop)
+    const seenFutureDates = new Set<string>();
+    for (const w of past) workouts.push(w);
+    for (const w of futureNew) {
+      if (seenFutureDates.has(w.date + "|" + (w.sport || ""))) continue;
+      seenFutureDates.add(w.date + "|" + (w.sport || ""));
+      workouts.push(w);
     }
   }
 
@@ -634,7 +831,9 @@ export function generateTrainingPlan(
 
   return {
     id: uid(),
-    name: `${weeks}-Week Evidence-Based Block`,
+    name: primaryDated
+      ? `${weeks}-Week block → ${primaryDated.goal.title}`
+      : `${weeks}-Week Evidence-Based Block`,
     startDate: format(start, "yyyy-MM-dd"),
     endDate,
     generatedAt: new Date().toISOString(),
@@ -645,27 +844,24 @@ export function generateTrainingPlan(
     },
     workouts,
     weeklyStructure: `${isRunner ? `${runDays}× Run (mostly Z2 + 1 quality + long)` : "No run"}${doesStrength ? ` · ${strengthDays}× Strength (${approachLabels.join(", ") || "Default"})` : ""} · Deload week ${weeks} · ${labelApproach(String(exp))} · ~${hours.toFixed(1)}h/wk`,
-    notes: [
-      // Time vs goal callouts first so they're visible
-      ...Array.from(new Set(constraintWarnings)),
-      maxAvailMin > 0 && maxAvailMin < 90 && hasMarathonGoal
-        ? `Time vs goal: longest day is only ${maxAvailMin} min. Long runs are capped to ${maxAvailMin} min — not enough for classic marathon long-run progression until you free more time on at least one day.`
-        : "",
-      previousPlan
-        ? "Update: kept completed past sessions; forward block rebuilt from Baseline."
-        : "New block from Baseline only.",
-      `Top priority goal: ${goalSummary}.`,
-      `Priority sports: ${[sport1, sport2].filter(Boolean).join(" · ") || "as selected in Baseline"}.`,
-      `Availability (minutes): ${DAY_KEYS.map((k, i) => `${k.slice(0, 3)} ${dayAvailabilityMin(profile, i)}`).join(" · ")}. Longest day ${maxAvailMin} min. Weekly total ~${hours.toFixed(1)} h.`,
-      (profile.runningBaseline as any)?.preferredLongRunDay != null
-        ? `Preferred long-run day: ${DAY_KEYS[Number((profile.runningBaseline as any).preferredLongRunDay)] || "auto"} (moved if that day has too little time).`
-        : `Preferred long-run day: auto (day with most hours).`,
-      isRunner
-        ? `Running: sessions only on days with hours > 0; each duration ≤ that day's minutes; long run on longest day (≤ ${maxAvailMin} min). Volume anchor ${weeklyKm || "n/a"} km.`
-        : "Running: not selected.",
-      doesStrength
-        ? `Strength: ${strengthDays} day(s)/week · ${approachLabels.join("; ") || "Default"} · also capped to daily minutes.`
-        : "Strength: not selected.",
-    ].filter(Boolean).join(" "),
+    notes: buildPlanNotes({
+      goalSummary,
+      goalDateLine,
+      phaseLabel,
+      sport1,
+      sport2,
+      isRunner,
+      doesStrength,
+      runDays,
+      strengthDays,
+      hours,
+      maxAvailMin,
+      hasMarathonGoal,
+      constraintWarnings,
+      profileConstraints: (profile.constraints || "").trim(),
+      previousPlan: !!previousPlan,
+    }),
+    // trainingRaces available for notes via constraintWarnings
+
   };
 }

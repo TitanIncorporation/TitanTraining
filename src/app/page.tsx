@@ -181,7 +181,6 @@ export default function TitanTraining() {
   }
 
   const handleSaveProfile = async (updated: AthleteProfile) => {
-    // Always persist locally as cache, then MUST write database when logged in
     saveProfile(updated);
     setProfile(updated);
     const result = await cloudSaveProfile(updated);
@@ -192,6 +191,39 @@ export default function TitanTraining() {
       setCloudStatus("fail");
       setCloudMsg(result.message);
       alert("Save to database failed:\n" + result.message);
+    }
+    // Auto-rebuild future sessions only from new profile
+    setGenerating(true);
+    try {
+      const newPlan = generateTrainingPlan(updated, 4, plan || undefined);
+      setPlan(newPlan);
+      savePlan(newPlan);
+      const cloud = await cloudSavePlanAndWorkouts(newPlan);
+      if (cloud.ok) {
+        setCloudStatus("ok");
+        setCloudMsg("Plan Saved");
+      }
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleConstraintsChange = async (text: string) => {
+    if (!profile) return;
+    const updated = { ...profile, constraints: text };
+    saveProfile(updated);
+    setProfile(updated);
+    await cloudSaveProfile(updated);
+    setGenerating(true);
+    try {
+      const newPlan = generateTrainingPlan(updated, 4, plan || undefined);
+      setPlan(newPlan);
+      savePlan(newPlan);
+      await cloudSavePlanAndWorkouts(newPlan);
+      setCloudStatus("ok");
+      setCloudMsg("Plan Saved");
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -334,6 +366,7 @@ export default function TitanTraining() {
               onGenerate={handleGeneratePlan}
               generating={generating}
               setTab={setTab}
+              onConstraintsChange={handleConstraintsChange}
             />
           )}
           {tab === "profile" && (
@@ -347,6 +380,7 @@ export default function TitanTraining() {
               generating={generating}
               onToggleComplete={toggleWorkoutComplete}
               onOpenWorkout={setSelectedWorkout}
+              onConstraintsChange={handleConstraintsChange}
             />
           )}
           {tab === "sync" && <SyncView plan={plan} />}
@@ -378,6 +412,7 @@ function Dashboard({
   onGenerate,
   generating,
   setTab,
+  onConstraintsChange,
 }: {
   profile: AthleteProfile | null;
   plan: TrainingPlan | null;
@@ -385,6 +420,7 @@ function Dashboard({
   onGenerate: () => void;
   generating: boolean;
   setTab: (t: Tab) => void;
+  onConstraintsChange: (text: string) => void;
 }) {
   if (!profile) {
     return (
@@ -436,6 +472,26 @@ function Dashboard({
           value={((profile as any).fitnessLevel || profile.experienceLevel || "—") as string}
           sub={`${profile.sports.length} sports`}
         />
+      </div>
+
+      {/* Constraints — free text; engine uses on save/blur */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-2">
+        <h3 className="font-medium">Constraints &amp; notes</h3>
+        <p className="text-xs text-muted">
+          Injury, travel, fatigue, one-off life events… Free text. Upcoming sessions adjust automatically.
+        </p>
+        <textarea
+          className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[72px]"
+          placeholder="e.g. Travel Tuesday off · sore Achilles this week · keep intensity easy for 5 days"
+          defaultValue={profile.constraints || ""}
+          key={profile.constraints || "c"}
+          onBlur={(e) => {
+            if (e.target.value !== (profile.constraints || "")) {
+              onConstraintsChange(e.target.value);
+            }
+          }}
+        />
+        {generating && <p className="text-xs text-muted">Updating upcoming sessions…</p>}
       </div>
 
       {/* CTA */}
@@ -1913,26 +1969,6 @@ function ProfileEditor({
       </ProfileSection>
 
       {/* ========== CONSTRAINTS ========== */}
-      <ProfileSection title="Constraints & Notes" defaultOpen={false}>
-        <label className="block">
-          <span className="text-sm mb-1 block">Constraints (injuries, limits…)</span>
-          <textarea
-            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[80px]"
-            value={form.constraints}
-            onChange={(e) => setForm({ ...form, constraints: e.target.value })}
-            placeholder="e.g. knee sensitive on downhills, limited shoulder ROM..."
-          />
-        </label>
-        <label className="block">
-          <span className="text-sm mb-1 block">Notes</span>
-          <textarea
-            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[80px]"
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="Anything else the engine should know..."
-          />
-        </label>
-      </ProfileSection>
 
       {savedFlash && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-success text-white text-sm font-medium shadow-lg">
@@ -1960,6 +1996,7 @@ function PlanView({
   generating,
   onToggleComplete,
   onOpenWorkout,
+  onConstraintsChange,
 }: {
   plan: TrainingPlan | null;
   profile: AthleteProfile | null;
@@ -1967,6 +2004,7 @@ function PlanView({
   generating: boolean;
   onToggleComplete: (id: string) => void;
   onOpenWorkout: (w: Workout) => void;
+  onConstraintsChange: (text: string) => void;
 }) {
   if (!plan) {
     return (
@@ -2019,21 +2057,24 @@ function PlanView({
             {format(parseISO(plan.endDate), "MMM d, yyyy")}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onGenerate}
-          disabled={generating}
-          className="px-4 py-2 bg-card border border-border hover:bg-card-hover rounded-lg text-sm font-medium flex items-center gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${generating ? "animate-spin" : ""}`} />
-          Update plan
-        </button>
+        {generating && (
+          <p className="text-xs text-muted">Updating upcoming sessions…</p>
+        )}
       </div>
 
       {plan.notes && (
         <div className="text-sm text-muted bg-card border border-border rounded-lg px-4 py-3 leading-relaxed space-y-1">
-          {plan.notes.split(/(?<=\.)\s+/).filter(Boolean).map((sentence, i) => (
-            <p key={i}>{sentence.trim()}</p>
+          {plan.notes.split("\n").filter(Boolean).map((line, i) => (
+            <p
+              key={i}
+              className={
+                line.toLowerCase().includes("constraint")
+                  ? "text-amber-400/90 font-medium"
+                  : ""
+              }
+            >
+              {line.trim()}
+            </p>
           ))}
         </div>
       )}
@@ -2103,6 +2144,27 @@ function PlanView({
           })}
         </div>
       </div>
+
+      {/* Constraints between calendar and list */}
+      {profile && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-2">
+          <h3 className="font-medium">Constraints &amp; notes</h3>
+          <p className="text-xs text-muted">
+            Free text (injury, travel, fatigue…). Upcoming sessions adjust when you leave the field.
+          </p>
+          <textarea
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[72px]"
+            placeholder="e.g. Hungover — easy only next 2 days · Travel Tue off"
+            defaultValue={profile.constraints || ""}
+            key={"plan-c-" + (profile.constraints || "")}
+            onBlur={(e) => {
+              if (e.target.value !== (profile.constraints || "")) {
+                onConstraintsChange(e.target.value);
+              }
+            }}
+          />
+        </div>
+      )}
 
       {/* List grouped by week */}
       <div className="space-y-6">
