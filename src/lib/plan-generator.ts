@@ -334,7 +334,7 @@ Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
                 : approaches.includes("strength")
                   ? "strength"
                   : approaches[0]);
-        const useHeavyDutyRegion = regionApproach === "heavy_duty" || regionApproach === "mentzer";
+        const useHeavyDutyRegion = regionApproach === "heavy_duty" || String(regionApproach) === "mentzer";
         const useHypertrophy = regionApproach === "hypertrophy" || approaches.includes("hypertrophy") && !useHeavyDutyRegion;
         const useStrength = regionApproach === "strength";
         const hardSets = useHeavyDutyRegion ? 1 : useHypertrophy ? 3 : useStrength ? 4 : 2;
