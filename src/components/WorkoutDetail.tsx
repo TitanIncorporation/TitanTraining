@@ -72,7 +72,17 @@ export default function WorkoutDetail({
             )}
             <div className="bg-[#0c0f14] rounded-xl p-3">
               <p className="text-xs text-slate-400">Type</p>
-              <p className="text-white font-medium capitalize">{workout.type.replace("_", " ")}</p>
+              <p className="text-white font-medium capitalize">
+                {workout.type === "heavy_duty"
+                  ? "Heavy Duty"
+                  : workout.type === "hypertrophy"
+                    ? "Hypertrophy"
+                    : workout.type === "functional"
+                      ? "Functional"
+                      : workout.type === "strength"
+                        ? "Strength"
+                        : workout.type.replace(/_/g, " ")}
+              </p>
             </div>
           </div>
 
@@ -82,6 +92,17 @@ export default function WorkoutDetail({
             <p className="text-sm text-slate-400 whitespace-pre-line leading-relaxed">
               {workout.description}
             </p>
+          </div>
+
+          {/* Athlete notes */}
+          <div>
+            <h3 className="text-sm font-medium text-slate-300 mb-2">Notes</h3>
+            <textarea
+              className="w-full bg-[#0c0f14] border border-[#243041] rounded-xl px-3 py-2 text-sm text-white min-h-[80px]"
+              placeholder="How it felt, adjustments, weather…"
+              defaultValue={workout.notes || ""}
+              onBlur={(e) => onNotesChange?.(workout.id, e.target.value)}
+            />
           </div>
 
           {/* Exercises */}

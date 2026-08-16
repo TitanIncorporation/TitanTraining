@@ -261,14 +261,13 @@ export function generateTrainingPlan(
       (g.metrics?.distanceKm && g.metrics.distanceKm >= 30) ||
       /marathon/i.test(g.title)
   );
-  if (hasMarathonGoal && (hours < 4 || maxDayMin < 75)) {
+  if (hasMarathonGoal && (hours < 5 || maxDayMin < 75)) {
     constraintWarnings.push(
-      `Constraint callout: A marathon-level goal with only ~${hours.toFixed(1)} h/week (longest available day ${maxDayMin} min) is not compatible with standard long-run progression. Sessions are capped to your stated availability. Consider more time on at least one day, or adjust the goal timeline.`
+      "Constraint callout: A marathon-level goal with the current availability is not compatible with standard long-run progression. Sessions are capped to your stated availability."
     );
-  }
-  if (hours > 0 && hours < 2.5 && (isRunner || doesStrength)) {
+  } else if (hours > 0 && hours < 3 && isRunner) {
     constraintWarnings.push(
-      `Low weekly availability (~${hours.toFixed(1)} h). Plan prioritizes recovery and short quality; full race prep may not be realistic until hours increase.`
+      "Constraint callout: Current weekly availability is low for race-focused volume. Sessions are capped to your stated availability."
     );
   }
 
@@ -337,7 +336,7 @@ export function generateTrainingPlan(
           longD = prefDay;
           if (w === 0) {
             constraintWarnings.push(
-              `Long-run day: you preferred ${DAY_KEYS[prefDay]}, but that day only has ${dayBudget[prefDay]} min. Session is capped to availability (not a full long run).`
+              "Constraint callout: Preferred long-run day does not have enough time for a full long run. Session is capped to your stated availability."
             );
           }
         }
@@ -352,7 +351,7 @@ export function generateTrainingPlan(
           longD !== prefDay
         ) {
           constraintWarnings.push(
-            `Long-run day: preferred ${DAY_KEYS[prefDay]} was unavailable or off; placed on ${DAY_KEYS[longD]} (more available time). Availability always wins.`
+            "Constraint callout: Preferred long-run day was not usable with current availability; long run was placed on a day with more time."
           );
         }
       }
@@ -494,11 +493,23 @@ export function generateTrainingPlan(
         let title = "";
         let description = "";
 
+        // Body region title + physique focus (tag = approach, not in title)
+        const focusBits: string[] = [];
         if (isUpperFocus) {
-          title = `Upper – ${regionLabel}`;
+          if (focusChest) focusBits.push("Chest focus");
+          if (focusArms) focusBits.push("Arms focus");
+          if (!focusBits.length) focusBits.push("Upper body");
+          else focusBits.unshift("Upper body");
+        } else {
+          focusBits.push("Lower body");
+        }
+        const bodyTitle = focusBits.join(" · ");
+
+        if (isUpperFocus) {
+          title = bodyTitle;
           description = useHeavyDutyRegion
-            ? `${regionLabel} (upper): warm-up, then ${hardSets} hard set(s). Day budget ${dayMin} min.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`
-            : `${regionLabel} (upper): ${hardSets} sets @ ${repGuide}. Day budget ${dayMin} min.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`;
+            ? `${regionLabel}: warm-up, then ${hardSets} hard set(s). Day budget ${dayMin} min.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`
+            : `${regionLabel}: ${hardSets} sets @ ${repGuide}. Day budget ${dayMin} min.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`;
           exercises = [];
           if (hasBarbell && hasBench) {
             exercises.push({
@@ -530,10 +541,10 @@ export function generateTrainingPlan(
             exercises.push({ name: "Bodyweight Rows", sets: hardSets, reps: repGuide });
           }
         } else {
-          title = `Lower – ${regionLabel}`;
+          title = bodyTitle;
           description = useHeavyDutyRegion
-            ? `${regionLabel} (lower): hard sets after warm-up. Day budget ${dayMin} min. Protect legs for long run.`
-            : `${regionLabel} (lower): ${hardSets} sets @ ${repGuide}. Day budget ${dayMin} min.`;
+            ? `${regionLabel}: hard sets after warm-up. Day budget ${dayMin} min. Protect legs for long run.`
+            : `${regionLabel}: ${hardSets} sets @ ${repGuide}. Day budget ${dayMin} min.`;
           exercises = [];
           if (hasBarbell) {
             exercises.push({
@@ -561,10 +572,19 @@ export function generateTrainingPlan(
         }
 
         const sDur = Math.min(45, dayMin);
+        const ra = String(regionApproach || "strength");
+        const strengthType: WorkoutType =
+          ra === "heavy_duty" || ra === "mentzer"
+            ? "heavy_duty"
+            : ra === "hypertrophy"
+              ? "hypertrophy"
+              : ra === "functional"
+                ? "functional"
+                : "strength";
         workouts.push(
           createWorkout(
             format(addDays(weekStart, sD), "yyyy-MM-dd"),
-            "hypertrophy",
+            strengthType,
             "strength",
             title,
             description,
@@ -590,10 +610,27 @@ export function generateTrainingPlan(
   workouts.sort((a, b) => a.date.localeCompare(b.date));
 
   const endDate = format(addWeeks(start, weeks), "yyyy-MM-dd");
-  const goalSummary =
-    topGoals.length > 0
-      ? topGoals.map((g) => `${g.title} (P${g.priority})`).join(", ")
-      : "General development";
+  const topGoal =
+    profile.goals
+      .slice()
+      .sort((a, b) => b.priority - a.priority)[0] || null;
+  const goalSummary = topGoal ? topGoal.title : "General development";
+  const sport1 = profile.primarySport
+    ? labelApproach(String(profile.primarySport).replace(/_/g, " "))
+    : null;
+  const sport2 = profile.secondarySport
+    ? labelApproach(String(profile.secondarySport).replace(/_/g, " "))
+    : profile.sportPriorities
+        ?.slice()
+        .sort((a, b) => a.priority - b.priority)[1]
+        ?.sport
+      ? labelApproach(
+          String(
+            profile.sportPriorities.slice().sort((a, b) => a.priority - b.priority)[1]
+              .sport
+          ).replace(/_/g, " ")
+        )
+      : null;
 
   return {
     id: uid(),
@@ -610,14 +647,15 @@ export function generateTrainingPlan(
     weeklyStructure: `${isRunner ? `${runDays}× Run (mostly Z2 + 1 quality + long)` : "No run"}${doesStrength ? ` · ${strengthDays}× Strength (${approachLabels.join(", ") || "Default"})` : ""} · Deload week ${weeks} · ${labelApproach(String(exp))} · ~${hours.toFixed(1)}h/wk`,
     notes: [
       // Time vs goal callouts first so they're visible
-      ...constraintWarnings,
+      ...Array.from(new Set(constraintWarnings)),
       maxAvailMin > 0 && maxAvailMin < 90 && hasMarathonGoal
         ? `Time vs goal: longest day is only ${maxAvailMin} min. Long runs are capped to ${maxAvailMin} min — not enough for classic marathon long-run progression until you free more time on at least one day.`
         : "",
       previousPlan
         ? "Update: kept completed past sessions; forward block rebuilt from Baseline."
         : "New block from Baseline only.",
-      `Goal focus: ${goalSummary || "General development"}.`,
+      `Top priority goal: ${goalSummary}.`,
+      `Priority sports: ${[sport1, sport2].filter(Boolean).join(" · ") || "as selected in Baseline"}.`,
       `Availability (minutes): ${DAY_KEYS.map((k, i) => `${k.slice(0, 3)} ${dayAvailabilityMin(profile, i)}`).join(" · ")}. Longest day ${maxAvailMin} min. Weekly total ~${hours.toFixed(1)} h.`,
       (profile.runningBaseline as any)?.preferredLongRunDay != null
         ? `Preferred long-run day: ${DAY_KEYS[Number((profile.runningBaseline as any).preferredLongRunDay)] || "auto"} (moved if that day has too little time).`

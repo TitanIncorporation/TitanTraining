@@ -30,6 +30,22 @@ import {
 } from "@/lib/cloud";
 import Auth from "@/components/Auth";
 import WorkoutDetail from "@/components/WorkoutDetail";
+
+function formatWorkoutType(type: string): string {
+  const map: Record<string, string> = {
+    heavy_duty: "Heavy Duty",
+    hypertrophy: "Hypertrophy",
+    functional: "Functional",
+    strength: "Strength",
+    easy_run: "Easy run",
+    long_run: "Long run",
+    trail_run: "Trail run",
+    tempo: "Tempo",
+    intervals: "Intervals",
+  };
+  return map[type] || type.replace(/_/g, " ");
+}
+
 import {
   LayoutDashboard,
   User,
@@ -228,6 +244,26 @@ export default function TitanTraining() {
     savePlan(updatedPlan);
   };
 
+  const updateWorkoutNotes = async (workoutId: string, notes: string) => {
+    if (!plan) return;
+    const updatedWorkouts = plan.workouts.map((w) =>
+      w.id === workoutId ? { ...w, notes } : w
+    );
+    const updatedPlan = { ...plan, workouts: updatedWorkouts };
+    setPlan(updatedPlan);
+    savePlan(updatedPlan);
+    setSelectedWorkout((sw) => (sw && sw.id === workoutId ? { ...sw, notes } : sw));
+    // notes live inside workout JSON — no new DB column required
+    const w = updatedWorkouts.find((x) => x.id === workoutId);
+    if (w) {
+      try {
+        await cloudSaveWorkouts([w]);
+      } catch {
+        /* local already saved */
+      }
+    }
+  };
+
   const navItems = [
     { id: "dashboard" as Tab, label: "Dashboard", icon: LayoutDashboard },
     { id: "plan" as Tab, label: "Training Plan", icon: Calendar },
@@ -320,6 +356,7 @@ export default function TitanTraining() {
         <WorkoutDetail
           workout={selectedWorkout}
           onClose={() => setSelectedWorkout(null)}
+          onNotesChange={updateWorkoutNotes}
           onToggle={(id) => {
             toggleWorkoutComplete(id);
             setSelectedWorkout((prev) =>
@@ -492,7 +529,7 @@ function Dashboard({
                   </div>
                 </div>
                 <span className="text-xs px-2 py-1 rounded bg-background text-muted capitalize">
-                  {w.type.replace("_", " ")}
+                  {formatWorkoutType(w.type)}
                 </span>
               </div>
             ))}
@@ -845,6 +882,15 @@ function ProfileEditor({
       {/* ========== GENERAL ========== */}
       <ProfileSection title="Baseline – General">
         <div className="grid grid-cols-2 gap-4">
+          <label className="block col-span-2">
+            <span className="text-sm mb-1 block">Name</span>
+            <input
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              placeholder="Your name"
+              value={form.name || ""}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </label>
           <label className="block">
             <span className="text-sm mb-1 block">Age</span>
             <input
@@ -2122,7 +2168,7 @@ function WorkoutCard({
             <div className="flex items-center gap-2 flex-wrap">
               <h4 className="font-medium">{workout.title}</h4>
               <span className="text-xs px-2 py-0.5 rounded-full bg-background text-muted capitalize">
-                {workout.type.replace("_", " ")}
+                {formatWorkoutType(workout.type)}
               </span>
             </div>
             <p className="text-xs text-muted mt-0.5">
@@ -2236,25 +2282,30 @@ function SyncView({ plan }: { plan: TrainingPlan | null }) {
       <div>
         <h2 className="text-2xl font-semibold">Data &amp; Sync</h2>
         <p className="text-muted mt-1">
-          Import past activity and connect Strava as your source of truth.
+          Bring in past files and connect live sources when you are ready.
         </p>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-5 space-y-3">
         <h3 className="font-medium">1. Import history</h3>
         <p className="text-sm text-muted">
-          Pull past runs and rides (from Strava once connected) into Titan so plans can use your real training history.
+          Upload activity files exported from Strava, Garmin, or similar (GPX, FIT, TCX, or CSV). This does not require a live Strava connection.
         </p>
-        <button
-          type="button"
-          disabled
-          className="px-4 py-2 rounded-lg bg-background border border-border text-sm text-muted cursor-not-allowed"
-        >
-          Import history (requires Strava)
-        </button>
+        <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-background border border-border text-sm cursor-pointer hover:border-accent">
+          <span>Choose files</span>
+          <input
+            type="file"
+            accept=".gpx,.fit,.tcx,.csv,.json"
+            multiple
+            className="hidden"
+            onChange={() => {
+              alert("File import will process GPX/FIT/TCX/CSV in the next step. Files are selected for now.");
+            }}
+          />
+        </label>
         {plan && (
           <p className="text-xs text-muted">
-            Current plan in app: {plan.name} ({plan.workouts?.length || 0} sessions)
+            Current plan: {plan.name} ({plan.workouts?.length || 0} sessions)
           </p>
         )}
       </div>
@@ -2262,7 +2313,7 @@ function SyncView({ plan }: { plan: TrainingPlan | null }) {
       <div className="bg-card border border-border rounded-xl p-5 space-y-3">
         <h3 className="font-medium">2. Connect Strava</h3>
         <p className="text-sm text-muted">
-          Link your Strava account. New activities will sync here and can be matched to planned sessions.
+          Link Strava for ongoing activity sync and matching to planned sessions.
         </p>
         <button
           type="button"

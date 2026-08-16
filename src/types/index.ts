@@ -146,6 +146,8 @@ export type WorkoutType =
   | "recovery"
   | "strength"
   | "hypertrophy"
+  | "heavy_duty"
+  | "functional"
   | "power"
   | "mobility"
   | "rest"
