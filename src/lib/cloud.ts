@@ -3,12 +3,29 @@ import type { AthleteProfile, TrainingPlan, Workout } from "@/types";
 
 export type CloudResult = { ok: true } | { ok: false; message: string };
 
+function fmtErr(error: { message: string; code?: string; details?: string; hint?: string }): string {
+  const parts = [error.message];
+  if (error.code) parts.push(`code=${error.code}`);
+  if (error.details) parts.push(String(error.details));
+  if (error.hint) parts.push(String(error.hint));
+  return parts.filter(Boolean).join(" | ");
+}
+
 async function requireUserId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser();
   return user?.id ?? null;
 }
 
-/** Profile → database (required when logged in) */
+/** Prefer crypto UUID so id fits uuid columns if needed */
+export function newId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export async function cloudSaveProfile(profile: AthleteProfile): Promise<CloudResult> {
   const uid = await requireUserId();
   if (!uid) return { ok: false, message: "Not signed in" };
@@ -19,15 +36,7 @@ export async function cloudSaveProfile(profile: AthleteProfile): Promise<CloudRe
     updated_at: new Date().toISOString(),
   });
 
-  if (error) {
-    return {
-      ok: false,
-      message:
-        error.message.includes("data") || error.message.includes("schema")
-          ? "Database missing profiles.data column. Run supabase/setup.sql in Supabase SQL Editor."
-          : error.message,
-    };
-  }
+  if (error) return { ok: false, message: fmtErr(error) };
   return { ok: true };
 }
 
@@ -43,27 +52,26 @@ export async function cloudLoadProfile(): Promise<AthleteProfile | null> {
   return data.data as AthleteProfile;
 }
 
-/** Plan → database */
 export async function cloudSavePlan(plan: TrainingPlan): Promise<CloudResult> {
   const uid = await requireUserId();
   if (!uid) return { ok: false, message: "Not signed in" };
 
-  const { error } = await supabase.from("training_plans").upsert({
+  // Fits both: structured columns (your table) + full JSON in data
+  const row: Record<string, unknown> = {
     id: plan.id,
     user_id: uid,
+    name: plan.name,
+    start_date: plan.startDate,
+    end_date: plan.endDate,
+    generated_at: plan.generatedAt || new Date().toISOString(),
+    weekly_structure: plan.weeklyStructure || null,
+    notes: plan.notes || null,
     data: plan,
     updated_at: new Date().toISOString(),
-  });
+  };
 
-  if (error) {
-    return {
-      ok: false,
-      message:
-        error.message.includes("schema") || error.message.includes("does not exist")
-          ? "Database missing training_plans table. Run supabase/setup.sql."
-          : error.message,
-    };
-  }
+  const { error } = await supabase.from("training_plans").upsert(row);
+  if (error) return { ok: false, message: fmtErr(error) };
   return { ok: true };
 }
 
@@ -72,15 +80,27 @@ export async function cloudLoadLatestPlan(): Promise<TrainingPlan | null> {
   if (!uid) return null;
   const { data, error } = await supabase
     .from("training_plans")
-    .select("data")
+    .select("data, name, start_date, end_date, generated_at, weekly_structure, notes, id")
     .eq("user_id", uid)
-    .order("updated_at", { ascending: false })
+    .order("generated_at", { ascending: false })
     .limit(1);
-  if (error || !data?.[0]?.data) return null;
-  return data[0].data as TrainingPlan;
+  if (error || !data?.[0]) return null;
+  const row = data[0] as any;
+  if (row.data) return row.data as TrainingPlan;
+  // Fallback if only structured columns
+  return {
+    id: row.id,
+    name: row.name,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    generatedAt: row.generated_at,
+    weeklyStructure: row.weekly_structure,
+    notes: row.notes,
+    workouts: [],
+    basedOnProfileSnapshot: {},
+  } as TrainingPlan;
 }
 
-/** Workouts batch → database (planned + completed; Strava later same table/source) */
 export async function cloudSaveWorkouts(workouts: Workout[]): Promise<CloudResult> {
   const uid = await requireUserId();
   if (!uid) return { ok: false, message: "Not signed in" };
@@ -96,19 +116,10 @@ export async function cloudSaveWorkouts(workouts: Workout[]): Promise<CloudResul
   }));
 
   const { error } = await supabase.from("workouts").upsert(rows);
-  if (error) {
-    return {
-      ok: false,
-      message:
-        error.message.includes("schema") || error.message.includes("does not exist")
-          ? "Database missing workouts table. Run supabase/setup.sql."
-          : error.message,
-    };
-  }
+  if (error) return { ok: false, message: fmtErr(error) };
   return { ok: true };
 }
 
-/** Save plan + all its workouts in one go */
 export async function cloudSavePlanAndWorkouts(plan: TrainingPlan): Promise<CloudResult> {
   const p = await cloudSavePlan(plan);
   if (!p.ok) return p;
