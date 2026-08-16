@@ -1,5 +1,5 @@
 import { AthleteProfile, TrainingPlan, Workout, WorkoutType, Sport, Goal } from "@/types";
-import { addDays, format, startOfWeek, addWeeks } from "date-fns";
+import { addDays, format, startOfWeek, addWeeks, parseISO } from "date-fns";
 
 function uid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
