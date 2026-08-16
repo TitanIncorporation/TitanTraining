@@ -621,6 +621,32 @@ function ProfileEditor({
   };
 
 
+
+  const commitZoneSelect = (z: "z1"|"z2"|"z3"|"z4"|"z5", which: 0 | 1, val: number) => {
+    const zones = {
+      z1: [...form.hrZones.zones.z1] as [number, number],
+      z2: [...form.hrZones.zones.z2] as [number, number],
+      z3: [...form.hrZones.zones.z3] as [number, number],
+      z4: [...form.hrZones.zones.z4] as [number, number],
+      z5: [...form.hrZones.zones.z5] as [number, number],
+    };
+    zones[z][which] = val;
+    if (zones[z][0] > zones[z][1]) {
+      if (which === 0) zones[z][1] = zones[z][0];
+      else zones[z][0] = zones[z][1];
+    }
+    const order: ("z1"|"z2"|"z3"|"z4"|"z5")[] = ["z1","z2","z3","z4","z5"];
+    for (let i = 0; i < order.length - 1; i++) {
+      const a = order[i];
+      const b = order[i + 1];
+      if (zones[b][0] <= zones[a][1]) {
+        zones[b][0] = zones[a][1] + 1;
+        if (zones[b][1] < zones[b][0]) zones[b][1] = zones[b][0];
+      }
+    }
+    setForm({ ...form, hrZones: { ...form.hrZones, zones } });
+  };
+
   const addGoal = () => {
     if (!newGoalTitle.trim()) return;
     const isRoadRace = newGoalType === "race";
