@@ -1103,20 +1103,24 @@ function ProfileEditor({
                 <span className="w-24 text-sm text-muted shrink-0">{label}</span>
                 <select
                   className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm"
-                  value={
-                    form.weeklyAvailability[day] === 2.5
-                      ? "2+"
-                      : form.weeklyAvailability[day] === 0
-                        ? "0"
-                        : String(form.weeklyAvailability[day] || 0)
-                  }
+                  value={(() => {
+                    const h = Number(form.weeklyAvailability[day] ?? 0);
+                    if (h >= 2.4) return "2+";
+                    if (h === 0) return "0";
+                    if (Math.abs(h - 0.5) < 0.01) return "0.5";
+                    if (Math.abs(h - 1.5) < 0.01) return "1.5";
+                    if (Math.abs(h - 1) < 0.01) return "1";
+                    if (Math.abs(h - 2) < 0.01) return "2";
+                    return String(h);
+                  })()}
                   onChange={(e) => {
-                    const v = e.target.value === "2+" ? 2.5 : Number(e.target.value);
+                    const raw = e.target.value;
+                    const v = raw === "2+" ? 2.5 : parseFloat(raw);
                     setForm({
                       ...form,
                       weeklyAvailability: {
                         ...form.weeklyAvailability,
-                        [day]: v,
+                        [day]: Number.isFinite(v) ? v : 0,
                       },
                     });
                   }}
@@ -2197,47 +2201,35 @@ function SyncView({ plan }: { plan: TrainingPlan | null }) {
       <div>
         <h2 className="text-2xl font-semibold">Data &amp; Sync</h2>
         <p className="text-muted mt-1">
-          Everything important is stored in Supabase: profile, plans, workouts. Strava will write into the same tunnel later.
-        </p>
-      </div>
-
-      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
-        <h3 className="font-medium">1. Database setup (one time)</h3>
-        <p className="text-sm text-muted">
-          In Supabase → SQL Editor, run the full script from the repo file{" "}
-          <code className="text-xs bg-background px-1 rounded">supabase/setup.sql</code>
-          (creates <strong>profiles</strong>, <strong>training_plans</strong>, <strong>workouts</strong>, <strong>activities</strong> + RLS).
-        </p>
-        <p className="text-sm text-muted">
-          If you already have <code className="text-xs">profiles</code> without a <code className="text-xs">data</code> column, this line alone may be enough:
-        </p>
-        <pre className="text-xs bg-background border border-border rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{`alter table public.profiles add column if not exists data jsonb;
-alter table public.profiles add column if not exists updated_at timestamptz default now();`}</pre>
-        <p className="text-sm text-muted">
-          After running SQL, hard-refresh the app and hit <strong>Save profile</strong>. You should see “Profile Saved”.
+          Your profile, training plan, and workouts are stored securely in your private cloud when you save.
         </p>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-5 space-y-2">
-        <h3 className="font-medium">2. What is synced today</h3>
+        <h3 className="font-medium">Synced data</h3>
         <ul className="text-sm text-muted space-y-1 list-disc pl-5">
-          <li>Profile / Baseline → <code className="text-xs">profiles</code></li>
-          <li>Training plan → <code className="text-xs">training_plans</code></li>
-          <li>All planned workouts → <code className="text-xs">workouts</code></li>
-          <li>Activities (Strava) → <code className="text-xs">activities</code> (table ready, connection next)</li>
+          <li>Athlete profile / Baseline</li>
+          <li>Training plans</li>
+          <li>Planned workouts</li>
         </ul>
         {plan && (
-          <p className="text-xs text-muted mt-2">Current plan in memory: {plan.name} ({plan.workouts?.length || 0} sessions)</p>
+          <p className="text-xs text-muted mt-2">
+            Current plan: {plan.name} ({plan.workouts?.length || 0} sessions)
+          </p>
         )}
       </div>
 
-      <div className="bg-card border border-border rounded-xl p-5 space-y-2 opacity-80">
-        <h3 className="font-medium">3. Strava</h3>
+      <div className="bg-card border border-border rounded-xl p-5 space-y-2">
+        <h3 className="font-medium">Strava</h3>
         <p className="text-sm text-muted">
-          Connect after the database banner shows a successful save. Activities will land in the same database.
+          Connect Strava to import activities and match them to planned sessions.
         </p>
-        <button type="button" disabled className="px-4 py-2 rounded-lg bg-background border border-border text-sm text-muted cursor-not-allowed">
-          Connect Strava (next step)
+        <button
+          type="button"
+          disabled
+          className="px-4 py-2 rounded-lg bg-background border border-border text-sm text-muted cursor-not-allowed"
+        >
+          Connect Strava (coming next)
         </button>
       </div>
     </div>

@@ -98,13 +98,15 @@ const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "satur
 
 function dayAvailabilityMin(profile: AthleteProfile, dayOffset: number): number {
   const key = DAY_KEYS[((dayOffset % 7) + 7) % 7];
-  const hours = (profile.weeklyAvailability as any)[key] || 0;
-  // 2.5 means "+2h" in UI — treat as 150 min
-  return Math.round(hours * 60);
+  const raw = (profile.weeklyAvailability as any)?.[key];
+  const hours = typeof raw === "string" ? parseFloat(raw) : Number(raw);
+  if (!Number.isFinite(hours) || hours <= 0) return 0;
+  // 0.5 h → 30 min; 2.5 (+2) → 150 min
+  return Math.max(1, Math.round(hours * 60));
 }
 
 function availableDayOffsets(profile: AthleteProfile): number[] {
-  return DAY_KEYS.map((_, i) => i).filter((i) => dayAvailabilityMin(profile, i) > 0);
+  return DAY_KEYS.map((_, i) => i).filter((i) => dayAvailabilityMin(profile, i) >= 15);
 }
 
 function capDuration(desiredMin: number, dayMin: number): number {
@@ -275,119 +277,90 @@ export function generateTrainingPlan(
     const isDeload = w === weeks - 1;
     const progress = isDeload ? 0.75 : 1 + w * 0.06;
 
-    // Schedule only on days with availability; longest session on the day with most minutes
-    const days = availOffsets.length
-      ? availOffsets
-      : []; // never invent days — if empty, no sessions this week
-    if (!days.length && (isRunner || doesStrength)) {
+    // ONLY schedule on days with hours (0.5 h = 30 min counts)
+    const days = [...availOffsets].sort(
+      (a, b) => dayAvailabilityMin(profile, b) - dayAvailabilityMin(profile, a)
+    );
+    if (!days.length && w === 0 && (isRunner || doesStrength)) {
       constraintWarnings.push(
-        "No training days with hours set in Baseline. Set hours per day, then regenerate."
+        "No training days with hours ≥ 0.5 in Baseline. Set hours per day, Save, then Update plan."
       );
     }
-    const longDay = pickLongRunDay(profile, []);
-    const otherDays = days.filter((d) => d !== longDay).sort((a, b) => a - b);
+    const longDay = days[0]; // most available minutes
+    const restDays = days.slice(1);
 
-    // ========== RUNNING ==========
-    if (isRunner && runDays >= 1) {
-      // Easy runs on non-long days (respect count)
-      const easyCount = Math.max(0, Math.min(runDays - 1, otherDays.length));
-      otherDays.slice(0, easyCount).forEach((dayOffset, idx) => {
-        const dayMin = dayAvailabilityMin(profile, dayOffset);
-        if (dayMin <= 0) return;
-        const desired = Math.round(easyBaseCapped * progress * (idx === 0 ? 1 : 0.9));
-        const duration = capDuration(desired, dayMin);
-        const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
-        const trailEasy = primaryIsTrail && idx === 1;
-
+    // ========== RUNNING: one session per available day (respect runDays cap) ==========
+    if (isRunner && days.length > 0) {
+      // Longest day → long run (or easy if very short)
+      if (longDay !== undefined) {
+        const dayMin = dayAvailabilityMin(profile, longDay);
+        const longDate = format(addDays(weekStart, longDay), "yyyy-MM-dd");
+        const desired = Math.round(longBaseCapped * progress * (isDeload ? 0.8 : 1));
+        const longDur = capDuration(Math.max(desired, 20), dayMin);
+        const isReallyLong = dayMin >= 50;
         workouts.push(
           createWorkout(
-            date,
-            trailEasy ? "trail_run" : "easy_run",
+            longDate,
+            primaryIsTrail ? "trail_run" : isReallyLong ? "long_run" : "easy_run",
             primaryIsTrail ? "trail_running" : "running",
-            trailEasy ? "Trail Aerobic" : "Easy Run (Z2)",
-            `Aerobic base (${duration} min, capped to your ${dayMin} min availability this day). Conversational Zone 2. Relaxed form.${
-              duration < desired ? " Shortened to fit the day." : ""
+            isReallyLong
+              ? primaryIsTrail
+                ? "Long Trail Run"
+                : "Long Run"
+              : "Easy Run (Z2)",
+            `${isReallyLong ? "Long run" : "Run"} ${longDur} min (~Z2). Day budget ${dayMin} min.${
+              longDur < desired ? ` Capped from ~${desired} min.` : ""
             }`,
             {
-              plannedDurationMin: duration,
-              plannedIntensity: "z2",
+              plannedDurationMin: longDur,
               plannedDistanceKm:
-                Math.round((duration / 60) * (exp === "beginner" ? 8.5 : 9.5) * 10) / 10,
+                Math.round((longDur / 60) * (exp === "beginner" ? 8 : 9) * 10) / 10,
+              plannedIntensity: "z2",
             }
           )
         );
-      });
-
-      // Quality: mid-week if a free day remains and runDays >= 3
-      if (runDays >= 3 && otherDays.length > easyCount) {
-        const qDay = otherDays[easyCount] ?? otherDays[0];
-        const dayMin = dayAvailabilityMin(profile, qDay);
-        if (dayMin > 0) {
-          const qDate = format(addDays(weekStart, qDay), "yyyy-MM-dd");
-          const qDur = capDuration(Math.round(qualityBaseCapped * (isDeload ? 0.7 : progress)), dayMin);
-          if (w % 2 === 0) {
-            workouts.push(
-              createWorkout(
-                qDate,
-                "tempo",
-                "running",
-                "Tempo / Threshold",
-                `Warm-up 8–12 min Z1–Z2.
-Main: continuous tempo (top Z3 / low Z4) within ${qDur} min total (day budget ${dayMin} min).
-Cool-down easy.
-Target: threshold durability for your priority race.`,
-                { plannedDurationMin: qDur, plannedIntensity: "z3" }
-              )
-            );
-          } else {
-            const reps = isDeload ? 4 : 5;
-            workouts.push(
-              createWorkout(
-                qDate,
-                "intervals",
-                "running",
-                "VO2max Intervals",
-                `Warm-up 10–12 min Z1–Z2 + 2–3 strides.
-Main: ${reps} × 3 min hard (Z4–Z5) / 90–120 s jog, within ${qDur} min total.
-Cool-down easy.
-Stop the set early if form breaks down.`,
-                { plannedDurationMin: qDur, plannedIntensity: "z5" }
-              )
-            );
-          }
-        }
       }
 
-      // Long run — always on the day with the most available minutes
-      {
-        const dayMin = dayAvailabilityMin(profile, longDay);
-        if (dayMin > 0) {
-          const longDate = format(addDays(weekStart, longDay), "yyyy-MM-dd");
-          const desired = Math.round(longBaseCapped * progress * (isDeload ? 0.8 : 1));
-          const longDur = capDuration(desired, dayMin);
+      // Other available days → easy / quality alternating
+      restDays.slice(0, Math.max(0, runDays - 1)).forEach((dayOffset, idx) => {
+        const dayMin = dayAvailabilityMin(profile, dayOffset);
+        if (dayMin < 15) return;
+        const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
+        const wantQuality = runDays >= 3 && idx === 0 && dayMin >= 35;
+        if (wantQuality) {
+          const qDur = capDuration(Math.round(qualityBaseCapped * (isDeload ? 0.7 : progress)), dayMin);
           workouts.push(
             createWorkout(
-              longDate,
-              primaryIsTrail ? "trail_run" : "long_run",
-              primaryIsTrail ? "trail_running" : "running",
-              primaryIsTrail ? "Long Trail Run" : "Long Run",
-              `Long run ${longDur} min (~Z2)${
-                longDur < desired
-                  ? ` — capped from ~${desired} min to your ${dayMin} min availability this day`
-                  : ""
-              }. Baseline longest: ${longestRecent || "n/a"} km.
-${primaryIsTrail ? "Trail: elevation + fueling practice when possible." : "Road: steady aerobic; fuel if >75 min."}
-Finish tired, not broken.`,
+              date,
+              w % 2 === 0 ? "tempo" : "intervals",
+              "running",
+              w % 2 === 0 ? "Tempo / Threshold" : "VO2max Intervals",
+              w % 2 === 0
+                ? `Warm-up + tempo within ${qDur} min total (day budget ${dayMin} min).`
+                : `Warm-up + intervals within ${qDur} min total (day budget ${dayMin} min).`,
+              { plannedDurationMin: qDur, plannedIntensity: w % 2 === 0 ? "z3" : "z5" }
+            )
+          );
+        } else {
+          const desired = Math.round(easyBaseCapped * progress * 0.9);
+          const duration = capDuration(desired, dayMin);
+          workouts.push(
+            createWorkout(
+              date,
+              "easy_run",
+              "running",
+              "Easy Run (Z2)",
+              `Aerobic ${duration} min (day budget ${dayMin} min). Zone 2.`,
               {
-                plannedDurationMin: longDur,
-                plannedDistanceKm:
-                  Math.round((longDur / 60) * (exp === "beginner" ? 8 : 9) * 10) / 10,
+                plannedDurationMin: duration,
                 plannedIntensity: "z2",
+                plannedDistanceKm:
+                  Math.round((duration / 60) * (exp === "beginner" ? 8.5 : 9.5) * 10) / 10,
               }
             )
           );
         }
-      }
+      });
     }
 
     // ========== STRENGTH ==========
