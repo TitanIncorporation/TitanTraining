@@ -82,7 +82,7 @@ export interface Equipment {
   resistanceBands: boolean;
   weightedVest: boolean;
   plyoBox: boolean;
-  medicineBall: boolean;
+  medicineBall?: boolean;
   other: string[];
 }
 
