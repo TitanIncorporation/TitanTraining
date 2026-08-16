@@ -60,9 +60,7 @@ export interface HRZones {
 
 export interface Equipment {
   gymAccess: boolean;
-  homeGym: boolean;
-  outdoorAccess: boolean;
-  trailAccess: boolean;
+      trailAccess: boolean;
   barbell: boolean;
   dumbbells: boolean;
   kettlebells: boolean;
@@ -71,7 +69,8 @@ export interface Equipment {
   bench: boolean;
   pullUpBar: boolean;
   dipBars: boolean;
-  parallettes: boolean;
+  legExtension: boolean;
+  legCurl: boolean;
   machines: boolean;
   cableMachine: boolean;
   treadmill: boolean;

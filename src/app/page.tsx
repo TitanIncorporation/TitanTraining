@@ -42,7 +42,7 @@ import {
   ChevronRight,
   LogOut,
 } from "lucide-react";
-import { format, parseISO, isToday, isFuture, isPast, startOfWeek } from "date-fns";
+import { format, parseISO, isToday, isFuture, isPast, startOfWeek , addDays} from "date-fns";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 type Tab = "dashboard" | "profile" | "plan" | "sync";
@@ -60,9 +60,7 @@ const defaultHRZones = (maxHR = 190, resting = 55): HRZones => ({
 });
 
 const defaultEquipment: Equipment = {
-  gymAccess: true,
-  homeGym: true,
-  outdoorAccess: true,
+  gymAccess: false,
   trailAccess: true,
   barbell: true,
   dumbbells: true,
@@ -72,7 +70,8 @@ const defaultEquipment: Equipment = {
   bench: true,
   pullUpBar: true,
   dipBars: false,
-  parallettes: false,
+  legExtension: false,
+  legCurl: false,
   machines: false,
   cableMachine: false,
   treadmill: false,
@@ -142,11 +141,30 @@ export default function TitanTraining() {
   const handleGeneratePlan = () => {
     if (!profile) return;
     setGenerating(true);
-    // Simulate a bit of thinking time
     setTimeout(() => {
-      const newPlan = generateTrainingPlan(profile, 4);
+      // Pass existing plan so regeneration keeps completed history & continues forward
+      const newPlan = generateTrainingPlan(profile, 4, plan || undefined);
       setPlan(newPlan);
       savePlan(newPlan);
+      // Monthly longest-run refresh (1st of month): from completed run workouts
+      try {
+        const now = new Date();
+        if (now.getDate() === 1 && profile.runningBaseline) {
+          const completedRuns = (newPlan.workouts || [])
+            .filter((w) => w.completed && w.plannedDistanceKm && (w.sport === "running" || w.sport === "trail_running"))
+            .map((w) => w.plannedDistanceKm || 0);
+          const maxD = completedRuns.length ? Math.max(...completedRuns) : profile.runningBaseline.longestRunLast30DaysKm;
+          if (maxD && maxD !== profile.runningBaseline.longestRunLast30DaysKm) {
+            const updated = {
+              ...profile,
+              runningBaseline: { ...profile.runningBaseline, longestRunLast30DaysKm: maxD },
+              updatedAt: new Date().toISOString(),
+            };
+            setProfile(updated);
+            // saveProfile if exists - try
+          }
+        }
+      } catch {}
       setGenerating(false);
       setTab("plan");
     }, 800);
@@ -163,10 +181,10 @@ export default function TitanTraining() {
   };
 
   const navItems = [
-    { id: "dashboard" as Tab, label: "Dashboard", icon: LayoutDashboard },
     { id: "profile" as Tab, label: "Profile", icon: User },
+    { id: "dashboard" as Tab, label: "Dashboard", icon: LayoutDashboard },
     { id: "plan" as Tab, label: "Training Plan", icon: Calendar },
-    { id: "sync" as Tab, label: "Strava", icon: Shield },
+    { id: "sync" as Tab, label: "Data & Sync", icon: Shield },
   ];
 
   return (
@@ -505,7 +523,7 @@ function ProfileEditor({
         experience: "intermediate",
         trainingApproaches: ["heavy_duty", "hypertrophy"],
         trainingApproachOther: "",
-        physiquePriorities: ["general"],
+        physiquePriorities: ["full_body"],
         physiqueOther: "",
         preferredStyle: "",
       },
@@ -531,21 +549,76 @@ function ProfileEditor({
   const [physiqueOtherInput, setPhysiqueOtherInput] = useState("");
   const [equipmentOtherInput, setEquipmentOtherInput] = useState("");
 
+  const setZoneBound = (z: "z1"|"z2"|"z3"|"z4"|"z5", which: 0 | 1, raw: string) => {
+    if (raw === "") return; // allow clearing while typing without forcing 0
+    const val = Number(raw);
+    if (Number.isNaN(val)) return;
+    const order: ("z1"|"z2"|"z3"|"z4"|"z5")[] = ["z1","z2","z3","z4","z5"];
+    const zones = { ...form.hrZones.zones };
+    const idx = order.indexOf(z);
+    let low = which === 0 ? val : zones[z][0];
+    let high = which === 1 ? val : zones[z][1];
+    if (low > high) {
+      if (which === 0) high = low;
+      else low = high;
+    }
+    // enforce non-overlap with neighbors
+    if (idx > 0) {
+      const prev = order[idx - 1];
+      if (low <= zones[prev][1]) low = zones[prev][1] + 1;
+      if (low > high) high = low;
+    }
+    if (idx < order.length - 1) {
+      const next = order[idx + 1];
+      if (high >= zones[next][0]) {
+        // push next start up
+        const nextLow = high + 1;
+        const nextHigh = Math.max(zones[next][1], nextLow);
+        zones[next] = [nextLow, nextHigh];
+        // cascade further if needed
+        for (let j = idx + 2; j < order.length; j++) {
+          const cur = order[j];
+          const prevZ = order[j - 1];
+          if (zones[cur][0] <= zones[prevZ][1]) {
+            const nl = zones[prevZ][1] + 1;
+            zones[cur] = [nl, Math.max(zones[cur][1], nl)];
+          }
+        }
+      }
+    }
+    zones[z] = [low, high];
+    setForm({ ...form, hrZones: { ...form.hrZones, zones } });
+  };
+
+
   const addGoal = () => {
     if (!newGoalTitle.trim()) return;
-    const isRunning = ["race", "distance", "time"].includes(newGoalType);
+    const isRoadRace = newGoalType === "race";
+    const isTrail = newGoalType === "trail_race";
     const isStrength = newGoalType === "strength";
+    // parse hh:mm to minutes for storage
+    let timeMinutes: number | undefined;
+    if (newGoalTime.trim()) {
+      const parts = newGoalTime.trim().split(":");
+      if (parts.length === 2) {
+        timeMinutes = (Number(parts[0]) || 0) * 60 + (Number(parts[1]) || 0);
+      } else {
+        timeMinutes = Number(newGoalTime) || undefined;
+      }
+    }
     const goal: Goal = {
       id: Math.random().toString(36).slice(2),
-      type: (newGoalType as any) || "custom",
+      type: (isTrail ? "race" : newGoalType) as any,
       title: newGoalTitle.trim(),
       priority: (newGoalIsTop ? 5 : 3) as 1 | 2 | 3 | 4 | 5,
       targetDate: newGoalDate || undefined,
-      metrics: isRunning
+      sport: isTrail ? "trail_running" : isRoadRace ? "running" : isStrength ? "strength" : undefined,
+      metrics: isRoadRace || isTrail
         ? {
             distanceKm: newGoalDistance ? Number(newGoalDistance) : undefined,
-            timeMinutes: newGoalTime ? Number(newGoalTime) : undefined,
-            paceMinPerKm: newGoalPace ? Number(newGoalPace) : undefined,
+            timeMinutes,
+            paceMinPerKm: !isTrail && newGoalPace ? Number(newGoalPace) : undefined,
+            other: isTrail && newGoalElevation ? `elevation:${newGoalElevation}m` : undefined,
           }
         : isStrength
           ? {
@@ -567,6 +640,7 @@ function ProfileEditor({
     setNewGoalDistance("");
     setNewGoalTime("");
     setNewGoalPace("");
+    setNewGoalElevation("");
     setNewGoalExercise("");
     setNewGoalWeight("");
     setNewGoalReps("");
@@ -905,23 +979,27 @@ function ProfileEditor({
                     ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
                   ).map((day) => (
                     <td key={day} className="px-0.5">
-                      <input
-                        type="number"
-                        min={0}
-                        max={8}
-                        step={0.5}
+                      <select
                         className="w-full bg-background border border-border rounded-lg py-1.5 text-sm text-center"
-                        value={form.weeklyAvailability[day]}
-                        onChange={(e) =>
+                        value={String(form.weeklyAvailability[day] || 0)}
+                        onChange={(e) => {
+                          const v = e.target.value === "2+" ? 2.5 : Number(e.target.value);
                           setForm({
                             ...form,
                             weeklyAvailability: {
                               ...form.weeklyAvailability,
-                              [day]: Number(e.target.value) || 0,
+                              [day]: v,
                             },
-                          })
-                        }
-                      />
+                          });
+                        }}
+                      >
+                        <option value="0">0</option>
+                        <option value="0.5">0.5</option>
+                        <option value="1">1</option>
+                        <option value="1.5">1.5</option>
+                        <option value="2">2</option>
+                        <option value="2+">+2</option>
+                      </select>
                     </td>
                   ))}
                 </tr>
@@ -1052,26 +1130,59 @@ function ProfileEditor({
                   type="number"
                   className="w-full bg-card border border-border rounded px-1 py-1 text-center"
                   value={form.hrZones.zones[z][0]}
-                  onChange={(e) => {
-                    const low = Number(e.target.value) || 0;
-                    const zones = { ...form.hrZones.zones };
-                    zones[z] = [low, zones[z][1]];
-                    setForm({ ...form, hrZones: { ...form.hrZones, zones } });
-                  }}
+                  onChange={(e) => setZoneBound(z, 0, e.target.value)}
                 />
                 <input
                   type="number"
                   className="w-full bg-card border border-border rounded px-1 py-1 text-center"
                   value={form.hrZones.zones[z][1]}
-                  onChange={(e) => {
-                    const high = Number(e.target.value) || 0;
-                    const zones = { ...form.hrZones.zones };
-                    zones[z] = [zones[z][0], high];
-                    setForm({ ...form, hrZones: { ...form.hrZones, zones } });
-                  }}
+                  onChange={(e) => setZoneBound(z, 1, e.target.value)}
                 />
               </div>
             ))}
+          </div>
+          <div className="mt-3 pt-3 border-t border-border">
+            <p className="text-xs text-muted mb-2">
+              Approx flat paces by zone (estimated). Calibrate with a race time for accuracy — HR alone cannot fix exact pace.
+            </p>
+            <div className="grid grid-cols-5 gap-1 text-[10px] sm:text-xs text-center">
+              {(["z1","z2","z3","z4","z5"] as const).map((z) => {
+                // Relative to an easy-pace anchor from experience / goal race if present
+                const raceGoal = form.goals.find((g) => g.priority === 5 && g.metrics?.paceMinPerKm);
+                const baseEasy =
+                  raceGoal?.metrics?.paceMinPerKm
+                    ? raceGoal.metrics.paceMinPerKm * 1.25
+                    : (form as any).runningBaseline?.experience === "elite"
+                      ? 5.0
+                      : (form as any).runningBaseline?.experience === "advanced"
+                        ? 5.5
+                        : (form as any).runningBaseline?.experience === "beginner"
+                          ? 7.0
+                          : 6.0;
+                const mult: Record<string, [number, number]> = {
+                  z1: [1.15, 1.25],
+                  z2: [1.05, 1.15],
+                  z3: [0.95, 1.05],
+                  z4: [0.88, 0.95],
+                  z5: [0.80, 0.88],
+                };
+                const [a, b] = mult[z];
+                const fmt = (min: number) => {
+                  const m = Math.floor(min);
+                  const s = Math.round((min - m) * 60);
+                  return `${m}:${String(s).padStart(2, "0")}`;
+                };
+                return (
+                  <div key={z} className="bg-card rounded p-1">
+                    <div className="text-muted uppercase">{z}</div>
+                    <div className="font-medium mt-0.5">
+                      {fmt(baseEasy * a)}–{fmt(baseEasy * b)}
+                    </div>
+                    <div className="text-muted">/km</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </ProfileSection>
@@ -1176,7 +1287,7 @@ function ProfileEditor({
           <span className="text-sm mb-2 block">Physique priorities</span>
           <div className="grid grid-cols-2 gap-2">
             {[
-              ["general", "General muscle growth"],
+              ["full_body", "Full body"],
               ["chest", "Chest"],
               ["arms", "Arms"],
               ["back", "Back"],
@@ -1230,7 +1341,7 @@ function ProfileEditor({
             </button>
           </div>
           {((form as any).strengthBaseline?.physiquePriorities || [])
-            .filter((p: string) => !["general", "chest", "arms", "back", "shoulders", "legs"].includes(p))
+            .filter((p: string) => !["full_body", "chest", "arms", "back", "shoulders", "legs"].includes(p))
             .map((p: string) => (
               <span
                 key={p}
@@ -1333,11 +1444,9 @@ function ProfileEditor({
               value={newGoalType}
               onChange={(e) => setNewGoalType(e.target.value)}
             >
-              <option value="race">Race (running)</option>
-              <option value="distance">Distance (running)</option>
-              <option value="time">Time (running)</option>
+              <option value="race">Race (road)</option>
+              <option value="trail_race">Trail running race</option>
               <option value="strength">Strength</option>
-              <option value="endurance">Endurance</option>
               <option value="custom">Custom</option>
             </select>
             <input
@@ -1349,7 +1458,7 @@ function ProfileEditor({
           </div>
 
           {/* Running targets */}
-          {(newGoalType === "race" || newGoalType === "distance" || newGoalType === "time") && (
+          {newGoalType === "race" && (
             <div className="grid grid-cols-3 gap-2">
               <input
                 type="number"
@@ -1359,9 +1468,8 @@ function ProfileEditor({
                 onChange={(e) => setNewGoalDistance(e.target.value)}
               />
               <input
-                type="number"
                 className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="Time (min)"
+                placeholder="Time (hh:mm)"
                 value={newGoalTime}
                 onChange={(e) => setNewGoalTime(e.target.value)}
               />
@@ -1372,6 +1480,30 @@ function ProfileEditor({
                 placeholder="Pace (min/km)"
                 value={newGoalPace}
                 onChange={(e) => setNewGoalPace(e.target.value)}
+              />
+            </div>
+          )}
+          {newGoalType === "trail_race" && (
+            <div className="grid grid-cols-3 gap-2">
+              <input
+                type="number"
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Distance (km)"
+                value={newGoalDistance}
+                onChange={(e) => setNewGoalDistance(e.target.value)}
+              />
+              <input
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Time (hh:mm)"
+                value={newGoalTime}
+                onChange={(e) => setNewGoalTime(e.target.value)}
+              />
+              <input
+                type="number"
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Elevation (m)"
+                value={newGoalElevation}
+                onChange={(e) => setNewGoalElevation(e.target.value)}
               />
             </div>
           )}
@@ -1428,8 +1560,6 @@ function ProfileEditor({
           {(
             [
               ["gymAccess", "Gym Access"],
-              ["homeGym", "Home Gym"],
-              ["outdoorAccess", "Outdoor / Park"],
               ["trailAccess", "Trail Access"],
               ["barbell", "Barbell"],
               ["dumbbells", "Dumbbells"],
@@ -1439,7 +1569,8 @@ function ProfileEditor({
               ["bench", "Bench"],
               ["pullUpBar", "Pull-up Bar"],
               ["dipBars", "Dip Bars"],
-              ["parallettes", "Parallettes"],
+              ["legExtension", "Leg Extension"],
+              ["legCurl", "Leg Curl"],
               ["machines", "Weight Machines"],
               ["cableMachine", "Cable Machine"],
               ["treadmill", "Treadmill"],
@@ -1538,12 +1669,15 @@ function ProfileEditor({
         </label>
       </ProfileSection>
 
-      <button
-        onClick={handleSave}
-        className="w-full py-3 bg-accent hover:opacity-90 text-white rounded-xl font-medium"
-      >
-        Save profile
-      </button>
+      <div className="sticky bottom-0 pt-4 pb-2 bg-background/95 backdrop-blur border-t border-border -mx-1 px-1 z-10">
+        <button
+          type="button"
+          onClick={handleSave}
+          className="w-full py-3.5 bg-accent hover:opacity-90 active:scale-[0.99] text-white rounded-xl font-semibold text-base shadow-lg"
+        >
+          Save profile
+        </button>
+      </div>
     </div>
   );
 }
@@ -1586,13 +1720,23 @@ function PlanView({
     );
   }
 
-  // Group by week
-  const byWeek: Record<string, Workout[]> = {};
+  const [calMonth, setCalMonth] = useState(() => startOfWeek(parseISO(plan.startDate), { weekStartsOn: 1 }));
+
+  const workoutsByDate: Record<string, Workout[]> = {};
   plan.workouts.forEach((w) => {
-    const weekStart = format(startOfWeek(parseISO(w.date), { weekStartsOn: 1 }), "yyyy-MM-dd");
-    if (!byWeek[weekStart]) byWeek[weekStart] = [];
-    byWeek[weekStart].push(w);
+    if (!workoutsByDate[w.date]) workoutsByDate[w.date] = [];
+    workoutsByDate[w.date].push(w);
   });
+
+  // Build calendar grid (Mon–Sun) covering plan range for current month view
+  const monthStart = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
+  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const days: Date[] = [];
+  for (let i = 0; i < 42; i++) {
+    days.push(addDays(gridStart, i));
+  }
+
+  const sortedWorkouts = [...plan.workouts].sort((a, b) => a.date.localeCompare(b.date));
 
   return (
     <div className="space-y-6">
@@ -1601,36 +1745,99 @@ function PlanView({
           <h2 className="text-2xl font-semibold">{plan.name}</h2>
           <p className="text-muted text-sm mt-1">
             {format(parseISO(plan.startDate), "MMM d")} –{" "}
-            {format(parseISO(plan.endDate), "MMM d, yyyy")} · Generated{" "}
-            {format(parseISO(plan.generatedAt), "MMM d")}
+            {format(parseISO(plan.endDate), "MMM d, yyyy")}
           </p>
         </div>
         <button
+          type="button"
           onClick={onGenerate}
           disabled={generating}
           className="px-4 py-2 bg-card border border-border hover:bg-card-hover rounded-lg text-sm font-medium flex items-center gap-2"
         >
           <RefreshCw className={`w-4 h-4 ${generating ? "animate-spin" : ""}`} />
-          Regenerate
+          Update plan
         </button>
       </div>
 
-      <p className="text-sm text-muted bg-card border border-border rounded-lg p-4">
-        {plan.notes}
-      </p>
+      {plan.notes && (
+        <p className="text-sm text-muted bg-card border border-border rounded-lg p-4">{plan.notes}</p>
+      )}
 
-      {Object.entries(byWeek).map(([weekStart, weekWorkouts]) => (
-        <div key={weekStart}>
-          <h3 className="font-medium text-sm text-muted mb-3">
-            Week of {format(parseISO(weekStart), "MMM d")}
+      {/* Calendar */}
+      <div className="bg-card border border-border rounded-xl p-3 sm:p-4">
+        <div className="flex items-center justify-between mb-3">
+          <button
+            type="button"
+            className="px-2 py-1 text-sm border border-border rounded-lg"
+            onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))}
+          >
+            Prev
+          </button>
+          <h3 className="font-semibold text-sm sm:text-base">
+            {format(calMonth, "MMMM yyyy")}
           </h3>
-          <div className="space-y-2">
-            {weekWorkouts.map((w) => (
-              <WorkoutCard key={w.id} workout={w} onToggle={onToggleComplete} onOpen={onOpenWorkout} />
-            ))}
-          </div>
+          <button
+            type="button"
+            className="px-2 py-1 text-sm border border-border rounded-lg"
+            onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))}
+          >
+            Next
+          </button>
         </div>
-      ))}
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] sm:text-xs text-muted mb-1">
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+            <div key={d}>{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {days.map((day) => {
+            const key = format(day, "yyyy-MM-dd");
+            const inMonth = day.getMonth() === calMonth.getMonth();
+            const list = workoutsByDate[key] || [];
+            const isToday = key === format(new Date(), "yyyy-MM-dd");
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={list.length === 0}
+                onClick={() => list[0] && onOpenWorkout(list[0])}
+                className={`min-h-[52px] sm:min-h-[64px] rounded-lg border p-1 text-left transition-colors ${
+                  inMonth ? "border-border bg-background" : "border-transparent opacity-40"
+                } ${isToday ? "ring-1 ring-accent" : ""} ${
+                  list.length ? "hover:border-accent/50 cursor-pointer" : "cursor-default"
+                }`}
+              >
+                <div className="text-[10px] sm:text-xs text-muted">{format(day, "d")}</div>
+                <div className="mt-0.5 space-y-0.5">
+                  {list.slice(0, 2).map((w) => (
+                    <div
+                      key={w.id}
+                      className={`truncate text-[9px] sm:text-[10px] px-0.5 rounded ${
+                        w.completed ? "bg-success/20 text-success" : "bg-accent/15 text-accent"
+                      }`}
+                    >
+                      {w.title}
+                    </div>
+                  ))}
+                  {list.length > 2 && (
+                    <div className="text-[9px] text-muted">+{list.length - 2}</div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* List */}
+      <div>
+        <h3 className="font-semibold mb-3">All sessions</h3>
+        <div className="space-y-2">
+          {sortedWorkouts.map((w) => (
+            <WorkoutCard key={w.id} workout={w} onToggle={onToggleComplete} onOpen={onOpenWorkout} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

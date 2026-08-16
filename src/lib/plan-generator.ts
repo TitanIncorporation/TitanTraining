@@ -68,7 +68,8 @@ function highestPriorityGoals(goals: Goal[], limit = 3): Goal[] {
  */
 export function generateTrainingPlan(
   profile: AthleteProfile,
-  weeks: number = 4
+  weeks: number = 4,
+  previousPlan?: TrainingPlan
 ): TrainingPlan {
   const start = startOfWeek(new Date(), { weekStartsOn: 1 });
   const workouts: Workout[] = [];
@@ -381,6 +382,16 @@ Keep lower-body work controlled so it does not compromise the next long run.
     }
   }
 
+  if (previousPlan?.workouts?.length) {
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const carried = previousPlan.workouts.filter((w) => w.completed && w.date < todayStr);
+    const keys = new Set(workouts.map((w) => w.date + "|" + w.title));
+    for (const w of carried) {
+      const key = w.date + "|" + w.title;
+      if (!keys.has(key)) workouts.push(w);
+    }
+  }
+
   workouts.sort((a, b) => a.date.localeCompare(b.date));
 
   const endDate = format(addWeeks(start, weeks), "yyyy-MM-dd");
@@ -402,9 +413,9 @@ Keep lower-body work controlled so it does not compromise the next long run.
     },
     workouts,
     weeklyStructure: `Polarized running (≥80% easy). Strength on Heavy Duty / low-volume principles. Deload in final week. Scaled to ${exp} level and ~${hours.toFixed(1)}h available.`,
-    notes: `Built from Baseline. Priorities: ${goalSummary}.
-Running: polarized, volume anchored to your weekly km / longest run when provided.
-Strength approach: ${approaches.join(", ") || "default"}. Physique focus: ${physique.join(", ") || "general"}.
-Training days/week: ${trainingDays}. Adjust from recovery.`,
+    notes: `${previousPlan ? "Updated plan — completed past sessions kept." : "New plan."} Priorities: ${goalSummary}.
+Running: polarized; volume from Baseline weekly km / longest run when set.
+Strength: ${approaches.join(", ") || "default"}; physique: ${physique.join(", ") || "full_body"}.
+Days/week: ${trainingDays}.`,
   };
 }
