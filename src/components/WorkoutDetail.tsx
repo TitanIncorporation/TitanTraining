@@ -8,10 +8,12 @@ export default function WorkoutDetail({
   workout,
   onClose,
   onToggle,
+  onNotesChange,
 }: {
   workout: Workout;
   onClose: () => void;
   onToggle: (id: string) => void;
+  onNotesChange?: (id: string, notes: string) => void;
 }) {
   const isStrength = workout.sport === "strength";
 

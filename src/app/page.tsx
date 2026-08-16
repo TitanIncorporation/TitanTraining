@@ -27,6 +27,7 @@ import {
   cloudLoadProfile,
   cloudSavePlanAndWorkouts,
   cloudLoadLatestPlan,
+  cloudSaveWorkouts,
 } from "@/lib/cloud";
 import Auth from "@/components/Auth";
 import WorkoutDetail from "@/components/WorkoutDetail";
