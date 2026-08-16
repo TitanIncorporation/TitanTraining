@@ -32,6 +32,55 @@ import {
 import Auth from "@/components/Auth";
 import WorkoutDetail from "@/components/WorkoutDetail";
 
+function ConstraintsBox({
+  value,
+  onSubmit,
+  generating,
+}: {
+  value: string;
+  onSubmit: (text: string) => void;
+  generating?: boolean;
+}) {
+  const [text, setText] = useState(value);
+  useEffect(() => {
+    setText(value);
+  }, [value]);
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-2">
+      <h3 className="font-medium">Constraints &amp; notes</h3>
+      <p className="text-xs text-muted">
+        Active only while text is here. To clear an injury/travel note, delete the text and hit Submit (or Clear) — it will stop appearing in the plan description.
+      </p>
+      <textarea
+        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[72px]"
+        placeholder="e.g. Sore Achilles — easy only this week · Travel Tue off"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium"
+          onClick={() => onSubmit(text.trim())}
+        >
+          Submit
+        </button>
+        <button
+          type="button"
+          className="px-4 py-2 bg-background border border-border rounded-lg text-sm"
+          onClick={() => {
+            setText("");
+            onSubmit("");
+          }}
+        >
+          Clear (constraint lifted)
+        </button>
+      </div>
+      {generating && <p className="text-xs text-muted">Updating upcoming sessions…</p>}
+    </div>
+  );
+}
+
 function formatWorkoutType(type: string): string {
   const map: Record<string, string> = {
     heavy_duty: "Heavy Duty",
@@ -474,25 +523,11 @@ function Dashboard({
         />
       </div>
 
-      {/* Constraints — free text; engine uses on save/blur */}
-      <div className="bg-card border border-border rounded-xl p-5 space-y-2">
-        <h3 className="font-medium">Constraints &amp; notes</h3>
-        <p className="text-xs text-muted">
-          Injury, travel, fatigue, one-off life events… Free text. Upcoming sessions adjust automatically.
-        </p>
-        <textarea
-          className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[72px]"
-          placeholder="e.g. Travel Tuesday off · sore Achilles this week · keep intensity easy for 5 days"
-          defaultValue={profile.constraints || ""}
-          key={profile.constraints || "c"}
-          onBlur={(e) => {
-            if (e.target.value !== (profile.constraints || "")) {
-              onConstraintsChange(e.target.value);
-            }
-          }}
-        />
-        {generating && <p className="text-xs text-muted">Updating upcoming sessions…</p>}
-      </div>
+      <ConstraintsBox
+        value={profile.constraints || ""}
+        onSubmit={onConstraintsChange}
+        generating={generating}
+      />
 
       {/* CTA */}
       {!plan && (
@@ -693,6 +728,7 @@ function ProfileEditor({
         preferredStyle: "",
       },
       constraints: "",
+      additionalConsiderations: "",
       notes: "",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -1877,6 +1913,20 @@ function ProfileEditor({
       </ProfileSection>
 
       {/* ========== EQUIPMENT ========== */}
+      <ProfileSection title="Additional considerations" defaultOpen={true}>
+        <p className="text-xs text-muted mb-2">
+          Extra instructions for the engine (e.g. use indoor bike as running cross-training, prefer morning sessions).
+        </p>
+        <textarea
+          className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[72px]"
+          placeholder="e.g. Include indoor bike sessions as part of running volume when needed"
+          value={(form as any).additionalConsiderations || ""}
+          onChange={(e) =>
+            setForm({ ...form, additionalConsiderations: e.target.value } as any)
+          }
+        />
+      </ProfileSection>
+
       <ProfileSection title="Equipment" defaultOpen={false}>
         <div className="grid grid-cols-2 gap-2">
           {(
@@ -2057,9 +2107,15 @@ function PlanView({
             {format(parseISO(plan.endDate), "MMM d, yyyy")}
           </p>
         </div>
-        {generating && (
-          <p className="text-xs text-muted">Updating upcoming sessions…</p>
-        )}
+        <button
+          type="button"
+          onClick={onGenerate}
+          disabled={generating}
+          className="px-4 py-2 bg-card border border-border hover:bg-card-hover rounded-lg text-sm font-medium flex items-center gap-2"
+        >
+          <RefreshCw className={`w-4 h-4 ${generating ? "animate-spin" : ""}`} />
+          {generating ? "Updating…" : "Update plan"}
+        </button>
       </div>
 
       {plan.notes && (
@@ -2068,9 +2124,9 @@ function PlanView({
             <p
               key={i}
               className={
-                line.toLowerCase().includes("constraint")
+                /constraint|callout/i.test(line)
                   ? "text-amber-400/90 font-medium"
-                  : ""
+                  : "text-muted"
               }
             >
               {line.trim()}
@@ -2147,23 +2203,10 @@ function PlanView({
 
       {/* Constraints between calendar and list */}
       {profile && (
-        <div className="bg-card border border-border rounded-xl p-5 space-y-2">
-          <h3 className="font-medium">Constraints &amp; notes</h3>
-          <p className="text-xs text-muted">
-            Free text (injury, travel, fatigue…). Upcoming sessions adjust when you leave the field.
-          </p>
-          <textarea
-            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[72px]"
-            placeholder="e.g. Hungover — easy only next 2 days · Travel Tue off"
-            defaultValue={profile.constraints || ""}
-            key={"plan-c-" + (profile.constraints || "")}
-            onBlur={(e) => {
-              if (e.target.value !== (profile.constraints || "")) {
-                onConstraintsChange(e.target.value);
-              }
-            }}
-          />
-        </div>
+        <ConstraintsBox
+          value={profile.constraints || ""}
+          onSubmit={onConstraintsChange}
+        />
       )}
 
       {/* List grouped by week */}

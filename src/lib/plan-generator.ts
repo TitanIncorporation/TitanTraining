@@ -159,6 +159,8 @@ function buildPlanNotes(o: {
   goalSummary: string;
   goalDateLine?: string;
   phaseLabel?: string;
+  phaseShort?: string;
+  weeksToGoal?: number | null;
   sport1: string | null;
   sport2: string | null;
   isRunner: boolean;
@@ -167,38 +169,63 @@ function buildPlanNotes(o: {
   strengthDays: number;
   hours: number;
   maxAvailMin: number;
+  trainingDaysPerWeek?: number;
+  physiqueFocus?: string;
   hasMarathonGoal: boolean;
   constraintWarnings: string[];
   profileConstraints: string;
+  additionalConsiderations?: string;
   previousPlan: boolean;
 }): string {
-  const sports = [o.sport1, o.sport2].filter(Boolean).join(" + ") || "training";
-  const goalBit = o.goalDateLine
-    ? `${o.goalSummary} (${o.goalDateLine})`
-    : o.goalSummary;
-  const phaseBit = o.phaseLabel ? ` · ${o.phaseLabel}` : "";
-  const line1 = `${goalBit}${phaseBit} · ${sports}.`;
-  const line2 = o.isRunner
-    ? `Up to ${o.runDays} run day(s)/week` +
-      (o.doesStrength ? ` + ${o.strengthDays} strength` : "") +
-      ` · ~${o.hours.toFixed(1)} h/wk · 1 session/day, capped to daily hours.`
-    : o.doesStrength
-      ? `${o.strengthDays} strength day(s)/week · ~${o.hours.toFixed(1)} h/wk · capped to daily hours.`
-      : `~${o.hours.toFixed(1)} h/wk capacity.`;
+  const mainSport = o.sport1 || "Training";
+  const focus = o.phaseShort || o.phaseLabel || "general";
+  const tMinus =
+    o.weeksToGoal != null ? `T−${o.weeksToGoal} wks` : null;
+  const objective = o.goalSummary || "General development";
+  const line1 = [
+    `Main sport: ${mainSport}`,
+    `Block focus: ${focus}`,
+    `Objective: ${objective}`,
+    tMinus,
+    o.goalDateLine ? o.goalDateLine : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const line2Parts: string[] = [];
+  if (o.sport2) line2Parts.push(`Secondary sport: ${o.sport2}`);
+  if (o.physiqueFocus) line2Parts.push(`Physique focus: ${o.physiqueFocus}`);
+  if (o.additionalConsiderations) {
+    line2Parts.push(`Additional: ${o.additionalConsiderations}`);
+  }
+  const line2 = line2Parts.length
+    ? line2Parts.join(" · ")
+    : o.isRunner
+      ? "Secondary: —"
+      : "Secondary: —";
+
+  const days = o.trainingDaysPerWeek || Math.max(o.runDays + o.strengthDays, 1);
+  const line3 =
+    `Time availability: ~${o.hours.toFixed(1)} h/wk · ~${days} days · ` +
+    (o.isRunner ? `${o.runDays}× run` : "no run") +
+    (o.doesStrength ? ` · ${o.strengthDays}× strength` : "") +
+    ` · 1 session/day, capped to daily hours.`;
+
   const callouts: string[] = [];
-  if (o.profileConstraints) {
-    callouts.push(`Constraint: ${o.profileConstraints}`);
+  // Active constraint only if non-empty (clearing the field removes the callout)
+  const activeConstraint = (o.profileConstraints || "").trim();
+  if (activeConstraint) {
+    callouts.push(`Active constraint: ${activeConstraint}`);
   }
   for (const w of o.constraintWarnings) {
     if (w && !callouts.includes(w)) callouts.push(w);
   }
   if (o.hasMarathonGoal && (o.hours < 5 || o.maxAvailMin < 75)) {
     callouts.push(
-      "Constraint callout: A marathon-level goal with the current availability is not compatible with standard long-run progression. Sessions are capped to your stated availability."
+      "Callout: Marathon-level goal vs current availability — sessions capped to your hours; standard long-run progression may not fit."
     );
   }
-  const lines = [line1, line2, ...callouts].filter(Boolean);
-  return lines.join("\n");
+  return [line1, line2, line3, ...callouts].filter(Boolean).join("\n");
 }
 
 export function generateTrainingPlan(
@@ -275,6 +302,10 @@ export function generateTrainingPlan(
     else if (weeksToGoal <= 16) trainingPhase = "build";
     else trainingPhase = "base";
   }
+  const phaseShort =
+    trainingPhase === "general"
+      ? "general"
+      : trainingPhase; // base | build | peak | taper | race
   const phaseLabel =
     trainingPhase === "general"
       ? undefined
@@ -848,6 +879,8 @@ export function generateTrainingPlan(
       goalSummary,
       goalDateLine,
       phaseLabel,
+      phaseShort,
+      weeksToGoal,
       sport1,
       sport2,
       isRunner,
@@ -856,9 +889,16 @@ export function generateTrainingPlan(
       strengthDays,
       hours,
       maxAvailMin,
+      trainingDaysPerWeek: trainingDays,
+      physiqueFocus: doesStrength
+        ? (physiqueLabels.filter((x) => x && x !== "Full body").join(", ") ||
+            physiqueLabels.join(", ") ||
+            undefined)
+        : undefined,
       hasMarathonGoal,
       constraintWarnings,
       profileConstraints: (profile.constraints || "").trim(),
+      additionalConsiderations: (profile as any).additionalConsiderations || profile.notes || "",
       previousPlan: !!previousPlan,
     }),
     // trainingRaces available for notes via constraintWarnings

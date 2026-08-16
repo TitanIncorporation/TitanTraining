@@ -130,7 +130,10 @@ export interface AthleteProfile {
   runningBaseline?: RunningBaseline;
   strengthBaseline?: StrengthBaseline;
   constraints: string;
+  /** Active only while non-empty; clear field = constraint lifted (not shown as callout) */
   notes: string;
+  /** Extra coaching instructions e.g. "use indoor bike as run cross-training" */
+  additionalConsiderations?: string;
   createdAt: string;
   updatedAt: string;
   experienceLevel: "beginner" | "intermediate" | "advanced" | "elite";
