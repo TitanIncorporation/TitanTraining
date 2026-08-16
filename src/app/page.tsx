@@ -170,7 +170,7 @@ export default function TitanTraining() {
     const result = await cloudSaveProfile(updated);
     if (result.ok) {
       setCloudStatus("ok");
-      setCloudMsg("Saved to database");
+      setCloudMsg("Profile Saved");
     } else {
       setCloudStatus("fail");
       setCloudMsg(result.message);
@@ -189,7 +189,7 @@ export default function TitanTraining() {
       const cloud = await cloudSavePlanAndWorkouts(newPlan);
       if (cloud.ok) {
         setCloudStatus("ok");
-        setCloudMsg("Plan + workouts saved to database");
+        setCloudMsg("Plan Saved");
       } else {
         setCloudStatus("fail");
         setCloudMsg(cloud.message);
@@ -1106,9 +1106,9 @@ function ProfileEditor({
                   value={
                     form.weeklyAvailability[day] === 2.5
                       ? "2+"
-                      : form.weeklyAvailability[day] > 0
-                        ? String(form.weeklyAvailability[day])
-                        : "0.5"
+                      : form.weeklyAvailability[day] === 0
+                        ? "0"
+                        : String(form.weeklyAvailability[day] || 0)
                   }
                   onChange={(e) => {
                     const v = e.target.value === "2+" ? 2.5 : Number(e.target.value);
@@ -1121,6 +1121,7 @@ function ProfileEditor({
                     });
                   }}
                 >
+                  <option value="0">0 h (off)</option>
                   <option value="0.5">0.5 h</option>
                   <option value="1">1 h</option>
                   <option value="1.5">1.5 h</option>
@@ -1849,7 +1850,7 @@ function ProfileEditor({
 
       {savedFlash && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-success text-white text-sm font-medium shadow-lg">
-          Profile saved (device + cloud if available)
+          Profile Saved
         </div>
       )}
       <div className="sticky bottom-0 pt-4 pb-2 bg-background/95 backdrop-blur border-t border-border -mx-1 px-1 z-10">
@@ -2213,7 +2214,7 @@ function SyncView({ plan }: { plan: TrainingPlan | null }) {
         <pre className="text-xs bg-background border border-border rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{`alter table public.profiles add column if not exists data jsonb;
 alter table public.profiles add column if not exists updated_at timestamptz default now();`}</pre>
         <p className="text-sm text-muted">
-          After running SQL, hard-refresh the app and hit <strong>Save profile</strong>. You must see “Saved to database”.
+          After running SQL, hard-refresh the app and hit <strong>Save profile</strong>. You should see “Profile Saved”.
         </p>
       </div>
 

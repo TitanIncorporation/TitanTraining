@@ -215,6 +215,18 @@ export function generateTrainingPlan(
   const qualityBase =
     exp === "beginner" ? 40 : exp === "intermediate" ? 50 : exp === "advanced" ? 60 : 70;
 
+  // HARD CONSTRAINT: never plan longer than the longest day the athlete has
+  const maxAvailMin = Math.max(
+    0,
+    ...(["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] as const).map(
+      (k) => Math.round(((profile.weeklyAvailability as any)?.[k] || 0) * 60)
+    )
+  );
+  // Cap base session lengths before any week loop
+  const easyBaseCapped = maxAvailMin > 0 ? Math.min(easyBase, maxAvailMin) : easyBase;
+  const longBaseCapped = maxAvailMin > 0 ? Math.min(longBase, maxAvailMin) : longBase;
+  const qualityBaseCapped = maxAvailMin > 0 ? Math.min(qualityBase, maxAvailMin) : qualityBase;
+
   // Session count from training days + hours
   let runDays = 0;
   if (isRunner) {
@@ -275,7 +287,7 @@ export function generateTrainingPlan(
       otherDays.slice(0, easyCount).forEach((dayOffset, idx) => {
         const dayMin = dayAvailabilityMin(profile, dayOffset);
         if (dayMin <= 0) return;
-        const desired = Math.round(easyBase * progress * (idx === 0 ? 1 : 0.9));
+        const desired = Math.round(easyBaseCapped * progress * (idx === 0 ? 1 : 0.9));
         const duration = capDuration(desired, dayMin);
         const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
         const trailEasy = primaryIsTrail && idx === 1;
@@ -305,7 +317,7 @@ export function generateTrainingPlan(
         const dayMin = dayAvailabilityMin(profile, qDay);
         if (dayMin > 0) {
           const qDate = format(addDays(weekStart, qDay), "yyyy-MM-dd");
-          const qDur = capDuration(Math.round(qualityBase * (isDeload ? 0.7 : progress)), dayMin);
+          const qDur = capDuration(Math.round(qualityBaseCapped * (isDeload ? 0.7 : progress)), dayMin);
           if (w % 2 === 0) {
             workouts.push(
               createWorkout(
@@ -344,7 +356,7 @@ Stop the set early if form breaks down.`,
         const dayMin = dayAvailabilityMin(profile, longDay);
         if (dayMin > 0) {
           const longDate = format(addDays(weekStart, longDay), "yyyy-MM-dd");
-          const desired = Math.round(longBase * progress * (isDeload ? 0.8 : 1));
+          const desired = Math.round(longBaseCapped * progress * (isDeload ? 0.8 : 1));
           const longDur = capDuration(desired, dayMin);
           workouts.push(
             createWorkout(
@@ -557,19 +569,22 @@ Finish tired, not broken.`,
     workouts,
     weeklyStructure: `${isRunner ? `${runDays}× Run (mostly Z2 + 1 quality + long)` : "No run"}${doesStrength ? ` · ${strengthDays}× Strength (${approachLabels.join(", ") || "Default"})` : ""} · Deload week ${weeks} · ${labelApproach(String(exp))} · ~${hours.toFixed(1)}h/wk`,
     notes: [
+      // Time vs goal callouts first so they're visible
+      ...constraintWarnings,
+      maxAvailMin > 0 && maxAvailMin < 90 && hasMarathonGoal
+        ? `Time vs goal: longest day is only ${maxAvailMin} min. Long runs are capped to ${maxAvailMin} min — not enough for classic marathon long-run progression until you free more time on at least one day.`
+        : "",
       previousPlan
         ? "Update: kept completed past sessions; forward block rebuilt from Baseline."
-        : "New block from Baseline only (no hard-coded athlete defaults).",
+        : "New block from Baseline only.",
       `Goal focus: ${goalSummary || "General development"}.`,
+      `Availability (minutes): ${DAY_KEYS.map((k, i) => `${k.slice(0, 3)} ${dayAvailabilityMin(profile, i)}`).join(" · ")}. Longest day ${maxAvailMin} min. Weekly total ~${hours.toFixed(1)} h.`,
       isRunner
-        ? `Running: up to ${runDays} days/week · easy Z2 · quality when days allow · long run on your longest available day (capped to that day's hours) · weekly volume anchor ${weeklyKm || "n/a"} km · ${primaryIsTrail ? "Trail bias" : "Road"}.`
-        : "Running: not selected in Baseline.",
+        ? `Running: sessions only on days with hours > 0; each duration ≤ that day's minutes; long run on longest day (≤ ${maxAvailMin} min). Volume anchor ${weeklyKm || "n/a"} km.`
+        : "Running: not selected.",
       doesStrength
-        ? `Strength: ${strengthDays} day(s)/week · approach ${approachLabels.join("; ") || "Default"} · physique ${physiqueLabels.join(", ") || "Full body"} · sessions capped to daily availability.`
+        ? `Strength: ${strengthDays} day(s)/week · ${approachLabels.join("; ") || "Default"} · also capped to daily minutes.`
         : "Strength: not selected.",
-      `Load budget: ~${hours.toFixed(1)} h/week. Sessions only on days with hours; duration never exceeds that day.`,
-      `Hours used: ${DAY_KEYS.map((k, i) => `${k.slice(0, 3)} ${dayAvailabilityMin(profile, i)}m`).join(", ")}.`,
-      ...constraintWarnings,
-    ].join(" "),
+    ].filter(Boolean).join(" "),
   };
 }
