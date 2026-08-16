@@ -277,30 +277,54 @@ export function generateTrainingPlan(
     const isDeload = w === weeks - 1;
     const progress = isDeload ? 0.75 : 1 + w * 0.06;
 
-    // ONLY schedule on days with hours (0.5 h = 30 min counts)
-    const days = [...availOffsets].sort(
-      (a, b) => dayAvailabilityMin(profile, b) - dayAvailabilityMin(profile, a)
-    );
-    if (!days.length && w === 0 && (isRunner || doesStrength)) {
-      constraintWarnings.push(
-        "No training days with hours ≥ 0.5 in Baseline. Set hours per day, Save, then Update plan."
-      );
+    // Per-day minute budgets (NOT weekly total) — one session per day max
+    const dayBudget: Record<number, number> = {};
+    for (let d = 0; d < 7; d++) {
+      const m = dayAvailabilityMin(profile, d);
+      if (m >= 15) dayBudget[d] = m;
     }
-    const longDay = days[0]; // most available minutes
-    const restDays = days.slice(1);
+    const daysWithTime = Object.keys(dayBudget)
+      .map(Number)
+      .sort((a, b) => dayBudget[b] - dayBudget[a]);
 
-    // ========== RUNNING: one session per available day (respect runDays cap) ==========
-    if (isRunner && days.length > 0) {
-      // Longest day → long run (or easy if very short)
-      if (longDay !== undefined) {
-        const dayMin = dayAvailabilityMin(profile, longDay);
-        const longDate = format(addDays(weekStart, longDay), "yyyy-MM-dd");
+    if (!daysWithTime.length) {
+      if (w === 0) {
+        constraintWarnings.push(
+          "No days with hours ≥ 0.5. Set Mon–Sun hours in Baseline, Save, Update plan."
+        );
+      }
+      continue;
+    }
+
+    const usedDays = new Set<number>();
+    const takeDay = (prefer: number[] = []): number | null => {
+      for (const d of prefer) {
+        if (dayBudget[d] != null && dayBudget[d] >= 15 && !usedDays.has(d)) return d;
+      }
+      for (const d of daysWithTime) {
+        if (!usedDays.has(d) && dayBudget[d] >= 15) return d;
+      }
+      return null;
+    };
+    const book = (d: number, mins: number) => {
+      usedDays.add(d);
+      dayBudget[d] = Math.max(0, (dayBudget[d] || 0) - mins);
+    };
+
+    // --- RUNNING (at most one session per day) ---
+    if (isRunner) {
+      const targetRunDays = Math.min(runDays, daysWithTime.length);
+
+      // 1) Longest remaining day → long / main aerobic
+      const longD = takeDay(daysWithTime);
+      if (longD != null) {
+        const dayMin = dayBudget[longD];
         const desired = Math.round(longBaseCapped * progress * (isDeload ? 0.8 : 1));
-        const longDur = capDuration(Math.max(desired, 20), dayMin);
-        const isReallyLong = dayMin >= 50;
+        const longDur = Math.min(desired, dayMin);
+        const isReallyLong = dayMin >= 50 && longDur >= 45;
         workouts.push(
           createWorkout(
-            longDate,
+            format(addDays(weekStart, longD), "yyyy-MM-dd"),
             primaryIsTrail ? "trail_run" : isReallyLong ? "long_run" : "easy_run",
             primaryIsTrail ? "trail_running" : "running",
             isReallyLong
@@ -308,9 +332,7 @@ export function generateTrainingPlan(
                 ? "Long Trail Run"
                 : "Long Run"
               : "Easy Run (Z2)",
-            `${isReallyLong ? "Long run" : "Run"} ${longDur} min (~Z2). Day budget ${dayMin} min.${
-              longDur < desired ? ` Capped from ~${desired} min.` : ""
-            }`,
+            `${isReallyLong ? "Long run" : "Run"} ${longDur} min (this day only has ${dayMin} min). Zone 2.`,
             {
               plannedDurationMin: longDur,
               plannedDistanceKm:
@@ -319,68 +341,83 @@ export function generateTrainingPlan(
             }
           )
         );
+        book(longD, longDur);
       }
 
-      // Other available days → easy / quality alternating
-      restDays.slice(0, Math.max(0, runDays - 1)).forEach((dayOffset, idx) => {
-        const dayMin = dayAvailabilityMin(profile, dayOffset);
-        if (dayMin < 15) return;
-        const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
-        const wantQuality = runDays >= 3 && idx === 0 && dayMin >= 35;
-        if (wantQuality) {
-          const qDur = capDuration(Math.round(qualityBaseCapped * (isDeload ? 0.7 : progress)), dayMin);
+      // 2) Quality once if we still have run slots and a free day with enough time
+      let runsPlaced = longD != null ? 1 : 0;
+      if (runsPlaced < targetRunDays && runDays >= 3) {
+        const qD = takeDay(daysWithTime.filter((d) => d !== longD));
+        if (qD != null && dayBudget[qD] >= 30) {
+          const dayMin = dayBudget[qD];
+          const qDur = Math.min(
+            Math.round(qualityBaseCapped * (isDeload ? 0.7 : progress)),
+            dayMin
+          );
           workouts.push(
             createWorkout(
-              date,
+              format(addDays(weekStart, qD), "yyyy-MM-dd"),
               w % 2 === 0 ? "tempo" : "intervals",
               "running",
               w % 2 === 0 ? "Tempo / Threshold" : "VO2max Intervals",
-              w % 2 === 0
-                ? `Warm-up + tempo within ${qDur} min total (day budget ${dayMin} min).`
-                : `Warm-up + intervals within ${qDur} min total (day budget ${dayMin} min).`,
-              { plannedDurationMin: qDur, plannedIntensity: w % 2 === 0 ? "z3" : "z5" }
-            )
-          );
-        } else {
-          const desired = Math.round(easyBaseCapped * progress * 0.9);
-          const duration = capDuration(desired, dayMin);
-          workouts.push(
-            createWorkout(
-              date,
-              "easy_run",
-              "running",
-              "Easy Run (Z2)",
-              `Aerobic ${duration} min (day budget ${dayMin} min). Zone 2.`,
+              `Quality ${qDur} min (day budget ${dayMin} min).`,
               {
-                plannedDurationMin: duration,
-                plannedIntensity: "z2",
-                plannedDistanceKm:
-                  Math.round((duration / 60) * (exp === "beginner" ? 8.5 : 9.5) * 10) / 10,
+                plannedDurationMin: qDur,
+                plannedIntensity: w % 2 === 0 ? "z3" : "z5",
               }
             )
           );
+          book(qD, qDur);
+          runsPlaced++;
         }
-      });
+      }
+
+      // 3) Easy runs on remaining free days until targetRunDays
+      while (runsPlaced < targetRunDays) {
+        const eD = takeDay();
+        if (eD == null) break;
+        const dayMin = dayBudget[eD];
+        const duration = Math.min(
+          Math.round(easyBaseCapped * progress * 0.9),
+          dayMin
+        );
+        workouts.push(
+          createWorkout(
+            format(addDays(weekStart, eD), "yyyy-MM-dd"),
+            "easy_run",
+            "running",
+            "Easy Run (Z2)",
+            `Aerobic ${duration} min (day budget ${dayMin} min).`,
+            {
+              plannedDurationMin: duration,
+              plannedIntensity: "z2",
+              plannedDistanceKm:
+                Math.round((duration / 60) * (exp === "beginner" ? 8.5 : 9.5) * 10) / 10,
+            }
+          )
+        );
+        book(eD, duration);
+        runsPlaced++;
+      }
     }
 
-    // ========== STRENGTH ==========
+    // --- STRENGTH: only on free days that still have budget (never stack on a run day) ---
     if (doesStrength && strengthDays > 0) {
-      // Prefer weekdays with availability that are not the long-run day
-      const strengthCandidates = days.filter((d) => d !== longDay);
-      const sDays = (strengthCandidates.length ? strengthCandidates : days).slice(0, strengthDays);
+      let sPlaced = 0;
+      const targetS = Math.min(strengthDays, daysWithTime.length);
+      while (sPlaced < targetS) {
+        const sD = takeDay();
+        if (sD == null) break;
+        const dayMin = dayBudget[sD];
+        if (dayMin < 25) break;
 
-      sDays.forEach((dayOffset, idx) => {
-        const dayMin = dayAvailabilityMin(profile, dayOffset);
-        if (dayMin <= 0) return;
-        const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
-        const isUpperFocus = idx === 0; // first session of week = upper bias
-
+        const isUpperFocus = sPlaced === 0;
         const hasBarbell = profile.equipment.barbell || profile.equipment.rack;
         const hasDB = profile.equipment.dumbbells;
         const hasKB = profile.equipment.kettlebells;
         const hasBench = profile.equipment.bench;
         const hasPullup = profile.equipment.pullUpBar;
-        // Body-region approach: custom text can set upper vs lower differently
+
         const regionApproach = isUpperFocus
           ? customSplit.upper ||
             (approaches.includes("heavy_duty")
@@ -398,11 +435,20 @@ export function generateTrainingPlan(
                 : approaches.includes("strength")
                   ? "strength"
                   : approaches[0]);
-        const useHeavyDutyRegion = regionApproach === "heavy_duty" || String(regionApproach) === "mentzer";
-        const useHypertrophy = regionApproach === "hypertrophy" || approaches.includes("hypertrophy") && !useHeavyDutyRegion;
+        const useHeavyDutyRegion =
+          regionApproach === "heavy_duty" || String(regionApproach) === "mentzer";
+        const useHypertrophy =
+          regionApproach === "hypertrophy" ||
+          (approaches.includes("hypertrophy") && !useHeavyDutyRegion);
         const useStrength = regionApproach === "strength";
         const hardSets = useHeavyDutyRegion ? 1 : useHypertrophy ? 3 : useStrength ? 4 : 2;
-        const repGuide = useHeavyDutyRegion ? "6–10" : useHypertrophy ? "8–12" : useStrength ? "3–6" : "6–12";
+        const repGuide = useHeavyDutyRegion
+          ? "6–10"
+          : useHypertrophy
+            ? "8–12"
+            : useStrength
+              ? "3–6"
+              : "6–12";
         const regionLabel = labelApproach(String(regionApproach || "strength"));
 
         let exercises: { name: string; sets: number; reps: string; notes?: string }[] = [];
@@ -410,87 +456,62 @@ export function generateTrainingPlan(
         let description = "";
 
         if (isUpperFocus) {
-          title = focusChest || focusArms ? "Upper Body – Priority Focus" : "Upper Body Strength";
+          title = `Upper – ${regionLabel}`;
           description = useHeavyDutyRegion
-            ? `${regionLabel} (upper): warm-up, then ${hardSets} hard set(s) near technical failure. Rest 2–4 min. Progressive overload. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`.trim()
-            : useHypertrophy
-              ? `${regionLabel} (upper): ${hardSets} sets @ ${repGuide}, controlled tempo. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`.trim()
-              : `${regionLabel} (upper): ${hardSets} sets @ ${repGuide}. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`.trim();
-
-          exercises = [
-            {
-              name: hasBarbell && hasBench ? "Incline Barbell Press" : hasDB ? "Incline Dumbbell Press" : "Incline Push-up variation",
+            ? `${regionLabel} (upper): warm-up, then ${hardSets} hard set(s). Day budget ${dayMin} min.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`
+            : `${regionLabel} (upper): ${hardSets} sets @ ${repGuide}. Day budget ${dayMin} min.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`;
+          exercises = [];
+          if (hasBarbell && hasBench) {
+            exercises.push({
+              name: focusChest ? "Incline Barbell Press" : "Barbell Bench Press",
               sets: hardSets,
               reps: repGuide,
-              notes: useHeavyDutyRegion ? "Warm-up then 1 hard set." : "Chest emphasis if selected.",
-            },
-            {
-              name: hasBarbell && hasBench ? "Flat Bench Press or Weighted Dip" : hasDB ? "Flat Dumbbell Press" : "Push-up variation",
+              notes: useHeavyDutyRegion ? "Warm-up then hard set(s)." : "Chest emphasis if selected.",
+            });
+          } else if (hasDB && hasBench) {
+            exercises.push({
+              name: focusChest ? "Incline DB Press" : "DB Bench Press",
               sets: hardSets,
               reps: repGuide,
-            },
-            {
-              name: hasPullup ? "Pull-up or Chin-up" : hasBarbell ? "Barbell Row" : "Dumbbell / Band Row",
-              sets: hardSets,
-              reps: repGuide,
-            },
-            {
-              name: hasDB || hasBarbell ? "Overhead Press" : "Pike Push-up",
-              sets: Math.max(1, hardSets - (useHeavyDuty ? 0 : 1)),
-              reps: repGuide,
-            },
-            {
-              name: hasDB || hasBarbell ? "Biceps Curl (barbell or DB)" : "Band Curl",
-              sets: focusArms ? hardSets : Math.max(1, hardSets - 1),
-              reps: useHypertrophy ? "10–15" : "8–12",
-              notes: "Direct arm work.",
-            },
-            {
-              name: hasDB || hasBarbell ? "Triceps Extension or Close-grip work" : "Diamond Push-up",
-              sets: focusArms ? hardSets : Math.max(1, hardSets - 1),
-              reps: useHypertrophy ? "10–15" : "8–12",
-              notes: "Direct arm work.",
-            },
-          ];
+            });
+          }
+          if (hasPullup) {
+            exercises.push({ name: "Pull-Ups or Lat Pulldown", sets: hardSets, reps: repGuide });
+          } else if (hasDB || hasKB) {
+            exercises.push({ name: "One-Arm Row", sets: hardSets, reps: repGuide });
+          }
+          if (focusArms || true) {
+            if (hasDB) {
+              exercises.push({ name: "DB Curl", sets: Math.min(hardSets, 2), reps: repGuide, notes: "Arms." });
+              exercises.push({ name: "Overhead Triceps Extension", sets: Math.min(hardSets, 2), reps: repGuide, notes: "Arms." });
+            }
+          }
+          if (!exercises.length) {
+            exercises.push({ name: "Push-Ups", sets: hardSets, reps: repGuide });
+            exercises.push({ name: "Bodyweight Rows", sets: hardSets, reps: repGuide });
+          }
         } else {
-          title = `Lower emphasis – ${regionLabel}`;
+          title = `Lower – ${regionLabel}`;
           description = useHeavyDutyRegion
-            ? `${regionLabel} (lower): 1 hard set per lift after warm-up. Protect legs for long run days.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`
-            : `${regionLabel} (lower): ${hardSets} sets @ ${repGuide}. Controlled eccentric; leave 1–2 RIR if long run is next day.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`;
-
-          exercises = [
-            {
-              name: hasBarbell ? "Squat or Front Squat" : hasDB || hasKB ? "Goblet / Split Squat" : "Bulgarian Split Squat",
-              sets: 1,
-              reps: "6–10",
-              notes: "1 hard set. Leave 1–2 reps in reserve if legs feel heavy.",
-            },
-            {
-              name: hasBarbell ? "Romanian Deadlift" : "Single-leg RDL",
-              sets: 1,
-              reps: "6–10",
-            },
-            {
-              name: hasPullup ? "Pull-up" : "Row variation",
-              sets: 1,
-              reps: "6–10",
-            },
-            {
-              name: hasDB || hasBarbell ? "Incline Press (lighter)" : "Push-up",
-              sets: 1,
-              reps: "8–12",
-            },
-            {
-              name: "Calf Raise",
-              sets: 1,
-              reps: "10–15",
-            },
-            {
-              name: "Core (Dead Bug / Side Plank / Pallof)",
-              sets: 2,
-              reps: "8–12 or 30s",
-            },
-          ];
+            ? `${regionLabel} (lower): hard sets after warm-up. Day budget ${dayMin} min. Protect legs for long run.`
+            : `${regionLabel} (lower): ${hardSets} sets @ ${repGuide}. Day budget ${dayMin} min.`;
+          exercises = [];
+          if (hasBarbell) {
+            exercises.push({
+              name: "Back Squat or Goblet Squat",
+              sets: hardSets,
+              reps: repGuide,
+              notes: "Leave 1–2 RIR if long run is next day.",
+            });
+          } else if (hasDB || hasKB) {
+            exercises.push({ name: "Goblet Squat", sets: hardSets, reps: repGuide });
+          }
+          if (hasBarbell) {
+            exercises.push({ name: "Romanian Deadlift", sets: hardSets, reps: repGuide });
+          } else if (hasDB) {
+            exercises.push({ name: "DB RDL", sets: hardSets, reps: repGuide });
+          }
+          exercises.push({ name: "Core (Dead Bug / Side Plank)", sets: 2, reps: "8–12 or 30s" });
         }
 
         if (isDeload) {
@@ -500,20 +521,20 @@ export function generateTrainingPlan(
           }));
         }
 
+        const sDur = Math.min(45, dayMin);
         workouts.push(
           createWorkout(
-            date,
+            format(addDays(weekStart, sD), "yyyy-MM-dd"),
             "hypertrophy",
             "strength",
             title,
             description,
-            {
-              plannedDurationMin: capDuration(45, dayMin),
-              exercises,
-            }
+            { plannedDurationMin: sDur, exercises }
           )
         );
-      });
+        book(sD, sDur);
+        sPlaced++;
+      }
     }
   }
 
