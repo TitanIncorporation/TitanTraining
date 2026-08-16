@@ -257,7 +257,14 @@ export function generateTrainingPlan(
     const progress = isDeload ? 0.75 : 1 + w * 0.06;
 
     // Schedule only on days with availability; longest session on the day with most minutes
-    const days = availOffsets.length ? availOffsets : [1, 3, 5];
+    const days = availOffsets.length
+      ? availOffsets
+      : []; // never invent days — if empty, no sessions this week
+    if (!days.length && (isRunner || doesStrength)) {
+      constraintWarnings.push(
+        "No training days with hours set in Baseline. Set hours per day, then regenerate."
+      );
+    }
     const longDay = pickLongRunDay(profile, []);
     const otherDays = days.filter((d) => d !== longDay).sort((a, b) => a - b);
 
@@ -560,7 +567,8 @@ Finish tired, not broken.`,
       doesStrength
         ? `Strength: ${strengthDays} day(s)/week · approach ${approachLabels.join("; ") || "Default"} · physique ${physiqueLabels.join(", ") || "Full body"} · sessions capped to daily availability.`
         : "Strength: not selected.",
-      `Load budget: ~${hours.toFixed(1)} h/week across your available days. Every session duration is limited by that day's hours. Final week = Deload.`,
+      `Load budget: ~${hours.toFixed(1)} h/week. Sessions only on days with hours; duration never exceeds that day.`,
+      `Hours used: ${DAY_KEYS.map((k, i) => `${k.slice(0, 3)} ${dayAvailabilityMin(profile, i)}m`).join(", ")}.`,
       ...constraintWarnings,
     ].join(" "),
   };

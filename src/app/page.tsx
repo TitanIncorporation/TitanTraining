@@ -22,6 +22,12 @@ import {
 import { generateTrainingPlan } from "@/lib/plan-generator";
 import { downloadICS } from "@/lib/export";
 import { supabase } from "@/lib/supabase";
+import {
+  cloudSaveProfile,
+  cloudLoadProfile,
+  cloudSavePlanAndWorkouts,
+  cloudLoadLatestPlan,
+} from "@/lib/cloud";
 import Auth from "@/components/Auth";
 import WorkoutDetail from "@/components/WorkoutDetail";
 import {
@@ -118,11 +124,8 @@ export default function TitanTraining() {
 
     (async () => {
       try {
-        const { data: { user: u } } = await supabase.auth.getUser();
-        if (!u) return;
-        const { data } = await supabase.from("profiles").select("data").eq("id", u.id).maybeSingle();
-        if (data?.data) {
-          const cloud = data.data as AthleteProfile;
+        const cloud = await cloudLoadProfile();
+        if (cloud) {
           const localUpdated = p?.updatedAt ? new Date(p.updatedAt).getTime() : 0;
           const cloudUpdated = cloud.updatedAt ? new Date(cloud.updatedAt).getTime() : 0;
           if (!p || cloudUpdated >= localUpdated) {
@@ -130,14 +133,8 @@ export default function TitanTraining() {
             saveProfile(cloud);
           }
         }
-        const { data: planRows } = await supabase
-          .from("training_plans")
-          .select("data")
-          .eq("user_id", u.id)
-          .order("updated_at", { ascending: false })
-          .limit(1);
-        if (planRows?.[0]?.data) {
-          const cloudPlan = planRows[0].data as TrainingPlan;
+        const cloudPlan = await cloudLoadLatestPlan();
+        if (cloudPlan) {
           if (!pl || (cloudPlan.generatedAt && (!pl.generatedAt || cloudPlan.generatedAt >= pl.generatedAt))) {
             setPlan(cloudPlan);
             savePlan(cloudPlan);
@@ -167,33 +164,17 @@ export default function TitanTraining() {
   }
 
   const handleSaveProfile = async (updated: AthleteProfile) => {
-    try {
-      saveProfile(updated);
-      setProfile(updated);
-      const { data: { user: u } } = await supabase.auth.getUser();
-      if (u) {
-        const { error } = await supabase.from("profiles").upsert({
-          id: u.id,
-          data: updated,
-          updated_at: new Date().toISOString(),
-        });
-        if (error) {
-          console.warn("Cloud profile save error", error.message);
-          setCloudStatus("fail");
-          setCloudMsg(error.message || "Cloud save failed — data kept on this device");
-        } else {
-          setCloudStatus("ok");
-          setCloudMsg("Saved on this device and in Supabase");
-        }
-      } else {
-        setCloudStatus("fail");
-        setCloudMsg("Saved on this device only (not signed in)");
-      }
-    } catch (err) {
-      console.error("Profile save failed", err);
+    // Always persist locally as cache, then MUST write database when logged in
+    saveProfile(updated);
+    setProfile(updated);
+    const result = await cloudSaveProfile(updated);
+    if (result.ok) {
+      setCloudStatus("ok");
+      setCloudMsg("Saved to database");
+    } else {
       setCloudStatus("fail");
-      setCloudMsg("Could not save profile");
-      alert("Could not save profile locally. Please try again.");
+      setCloudMsg(result.message);
+      alert("Save to database failed:\n" + result.message);
     }
   };
 
@@ -205,18 +186,13 @@ export default function TitanTraining() {
       const newPlan = generateTrainingPlan(profile, 4, plan || undefined);
       setPlan(newPlan);
       savePlan(newPlan);
-      try {
-        const { data: { user: u } } = await supabase.auth.getUser();
-        if (u) {
-          await supabase.from("training_plans").upsert({
-            id: newPlan.id,
-            user_id: u.id,
-            data: newPlan,
-            updated_at: new Date().toISOString(),
-          });
-        }
-      } catch (e) {
-        console.warn("Cloud plan save skipped", e);
+      const cloud = await cloudSavePlanAndWorkouts(newPlan);
+      if (cloud.ok) {
+        setCloudStatus("ok");
+        setCloudMsg("Plan + workouts saved to database");
+      } else {
+        setCloudStatus("fail");
+        setCloudMsg(cloud.message);
       }
       // Monthly longest-run refresh (1st of month): from completed run workouts
       try {
@@ -2218,58 +2194,52 @@ function SyncView({ plan }: { plan: TrainingPlan | null }) {
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-semibold">Strava</h2>
+        <h2 className="text-2xl font-semibold">Data &amp; Sync</h2>
         <p className="text-muted mt-1">
-          Strava is the single source of truth for activity history.
+          Everything important is stored in Supabase: profile, plans, workouts. Strava will write into the same tunnel later.
         </p>
       </div>
 
-      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#FC4C02] flex items-center justify-center text-white font-bold text-sm">
-            S
-          </div>
-          <div>
-            <h3 className="font-semibold">Connect Strava</h3>
-            <p className="text-xs text-muted">OAuth — coming next</p>
-          </div>
-        </div>
+      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+        <h3 className="font-medium">1. Database setup (one time)</h3>
         <p className="text-sm text-muted">
-          Connect your Strava account so Titan can read your activities and match them
-          to planned workouts automatically.
+          In Supabase → SQL Editor, run the full script from the repo file{" "}
+          <code className="text-xs bg-background px-1 rounded">supabase/setup.sql</code>
+          (creates <strong>profiles</strong>, <strong>training_plans</strong>, <strong>workouts</strong>, <strong>activities</strong> + RLS).
         </p>
-        <button
-          type="button"
-          disabled
-          className="px-4 py-2.5 bg-[#FC4C02]/80 text-white rounded-lg text-sm font-medium opacity-60 cursor-not-allowed"
-        >
-          Connect Strava (soon)
-        </button>
+        <p className="text-sm text-muted">
+          If you already have <code className="text-xs">profiles</code> without a <code className="text-xs">data</code> column, this line alone may be enough:
+        </p>
+        <pre className="text-xs bg-background border border-border rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{`alter table public.profiles add column if not exists data jsonb;
+alter table public.profiles add column if not exists updated_at timestamptz default now();`}</pre>
+        <p className="text-sm text-muted">
+          After running SQL, hard-refresh the app and hit <strong>Save profile</strong>. You must see “Saved to database”.
+        </p>
       </div>
 
-      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-        <h3 className="font-semibold">Import history</h3>
-        <p className="text-sm text-muted">
-          Until live connect is ready, you can import a Strava export (GPX/TCX/JSON)
-          so the engine has past volume and pace context.
-        </p>
-        <label className="inline-flex px-4 py-2.5 bg-background border border-border hover:bg-card-hover rounded-lg text-sm font-medium items-center gap-2 cursor-pointer">
-          Import Strava history
-          <input
-            type="file"
-            accept=".json,.gpx,.tcx,.fit,application/json"
-            className="hidden"
-            onChange={() => {
-              alert("Strava history import will be wired in the next integration step.");
-            }}
-          />
-        </label>
+      <div className="bg-card border border-border rounded-xl p-5 space-y-2">
+        <h3 className="font-medium">2. What is synced today</h3>
+        <ul className="text-sm text-muted space-y-1 list-disc pl-5">
+          <li>Profile / Baseline → <code className="text-xs">profiles</code></li>
+          <li>Training plan → <code className="text-xs">training_plans</code></li>
+          <li>All planned workouts → <code className="text-xs">workouts</code></li>
+          <li>Activities (Strava) → <code className="text-xs">activities</code> (table ready, connection next)</li>
+        </ul>
         {plan && (
-          <p className="text-xs text-muted">
-            Active plan: {plan.name}. Matching imported activities to planned sessions comes with connect.
-          </p>
+          <p className="text-xs text-muted mt-2">Current plan in memory: {plan.name} ({plan.workouts?.length || 0} sessions)</p>
         )}
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-5 space-y-2 opacity-80">
+        <h3 className="font-medium">3. Strava</h3>
+        <p className="text-sm text-muted">
+          Connect after the database banner shows a successful save. Activities will land in the same database.
+        </p>
+        <button type="button" disabled className="px-4 py-2 rounded-lg bg-background border border-border text-sm text-muted cursor-not-allowed">
+          Connect Strava (next step)
+        </button>
       </div>
     </div>
   );
 }
+
