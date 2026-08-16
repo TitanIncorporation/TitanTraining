@@ -16,9 +16,9 @@ export default function WorkoutDetail({
   const isStrength = workout.sport === "strength";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-[#141a22] border border-[#243041] rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg max-h-[min(90vh,720px)] mx-auto bg-[#141a22] border border-[#243041] rounded-2xl overflow-y-auto shadow-xl">
         <div className="sticky top-0 bg-[#141a22] border-b border-[#243041] px-5 py-4 flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-lg text-white">{workout.title}</h2>

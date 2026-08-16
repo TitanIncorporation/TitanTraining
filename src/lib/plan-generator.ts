@@ -413,9 +413,6 @@ Keep lower-body work controlled so it does not compromise the next long run.
     },
     workouts,
     weeklyStructure: `Polarized running (≥80% easy). Strength on Heavy Duty / low-volume principles. Deload in final week. Scaled to ${exp} level and ~${hours.toFixed(1)}h available.`,
-    notes: `${previousPlan ? "Updated plan — completed past sessions kept." : "New plan."} Priorities: ${goalSummary}.
-Running: polarized; volume from Baseline weekly km / longest run when set.
-Strength: ${approaches.join(", ") || "default"}; physique: ${physique.join(", ") || "full_body"}.
-Days/week: ${trainingDays}.`,
+    notes: `${previousPlan ? "Updated from Baseline + history." : "From Baseline."} Focus: ${goalSummary || "general"}. ${runDays} run / ${strengthDays} strength sessions per week · ${approaches[0] || "strength"} · ${trainingDays} days available.`,
   };
 }

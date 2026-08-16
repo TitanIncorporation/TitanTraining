@@ -198,9 +198,9 @@ export default function TitanTraining() {
   };
 
   const navItems = [
-    { id: "profile" as Tab, label: "Profile", icon: User },
     { id: "dashboard" as Tab, label: "Dashboard", icon: LayoutDashboard },
     { id: "plan" as Tab, label: "Training Plan", icon: Calendar },
+    { id: "profile" as Tab, label: "Profile", icon: User },
     { id: "sync" as Tab, label: "Data & Sync", icon: Shield },
   ];
 
@@ -568,6 +568,7 @@ function ProfileEditor({
   const [equipmentOtherInput, setEquipmentOtherInput] = useState("");
 
   // Draft strings so mobile typing is not blocked; non-overlap on blur
+  const [hrDraft, setHrDraft] = useState<{ max?: string; rest?: string }>({});
   const [zoneDraft, setZoneDraft] = useState<Record<string, string>>({});
   const zoneVal = (z: string, which: 0 | 1) => {
     const key = `${z}_${which}`;
@@ -646,7 +647,14 @@ function ProfileEditor({
         ? {
             distanceKm: newGoalDistance ? Number(newGoalDistance) : undefined,
             timeMinutes,
-            paceMinPerKm: !isTrail && newGoalPace ? Number(newGoalPace) : undefined,
+            paceMinPerKm: !isTrail && newGoalPace
+              ? (newGoalPace.includes(":")
+                  ? (() => {
+                      const [m, s] = newGoalPace.split(":");
+                      return (Number(m) || 0) + (Number(s) || 0) / 60;
+                    })()
+                  : Number(newGoalPace))
+              : undefined,
             other: isTrail && newGoalElevation ? `elevation:${newGoalElevation}m` : undefined,
           }
         : isStrength
@@ -930,76 +938,46 @@ function ProfileEditor({
             <span className="text-sm mb-1 block">Max HR</span>
             <input
               type="number"
+              inputMode="numeric"
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              value={form.hrZones.maxHR}
-              onChange={(e) => {
-                const maxHR = Number(e.target.value) || 190;
+              value={hrDraft.max ?? String(form.hrZones.maxHR)}
+              onChange={(e) => setHrDraft((d) => ({ ...d, max: e.target.value }))}
+              onBlur={() => {
+                const raw = hrDraft.max;
+                if (raw === undefined) return;
+                const maxHR = raw === "" || Number.isNaN(Number(raw)) ? form.hrZones.maxHR : Number(raw);
                 const resting = form.hrZones.restingHR;
-                setForm({
-                  ...form,
-                  hrZones: {
-                    maxHR,
-                    restingHR: resting,
-                    zones: {
-                      z1: [
-                        Math.round(resting + (maxHR - resting) * 0.5),
-                        Math.round(resting + (maxHR - resting) * 0.6),
-                      ],
-                      z2: [
-                        Math.round(resting + (maxHR - resting) * 0.6),
-                        Math.round(resting + (maxHR - resting) * 0.7),
-                      ],
-                      z3: [
-                        Math.round(resting + (maxHR - resting) * 0.7),
-                        Math.round(resting + (maxHR - resting) * 0.8),
-                      ],
-                      z4: [
-                        Math.round(resting + (maxHR - resting) * 0.8),
-                        Math.round(resting + (maxHR - resting) * 0.9),
-                      ],
-                      z5: [Math.round(resting + (maxHR - resting) * 0.9), maxHR],
-                    },
-                  },
+                setForm({ ...form, hrZones: defaultHRZones(maxHR, resting) });
+                setHrDraft((d) => {
+                  const n = { ...d };
+                  delete n.max;
+                  return n;
                 });
               }}
+              onFocus={(e) => e.target.select()}
             />
           </label>
           <label className="block">
             <span className="text-sm mb-1 block">Resting HR</span>
             <input
               type="number"
+              inputMode="numeric"
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              value={form.hrZones.restingHR}
-              onChange={(e) => {
-                const resting = Number(e.target.value) || 55;
+              value={hrDraft.rest ?? String(form.hrZones.restingHR)}
+              onChange={(e) => setHrDraft((d) => ({ ...d, rest: e.target.value }))}
+              onBlur={() => {
+                const raw = hrDraft.rest;
+                if (raw === undefined) return;
+                const resting = raw === "" || Number.isNaN(Number(raw)) ? form.hrZones.restingHR : Number(raw);
                 const maxHR = form.hrZones.maxHR;
-                setForm({
-                  ...form,
-                  hrZones: {
-                    maxHR,
-                    restingHR: resting,
-                    zones: {
-                      z1: [
-                        Math.round(resting + (maxHR - resting) * 0.5),
-                        Math.round(resting + (maxHR - resting) * 0.6),
-                      ],
-                      z2: [
-                        Math.round(resting + (maxHR - resting) * 0.6),
-                        Math.round(resting + (maxHR - resting) * 0.7),
-                      ],
-                      z3: [
-                        Math.round(resting + (maxHR - resting) * 0.7),
-                        Math.round(resting + (maxHR - resting) * 0.8),
-                      ],
-                      z4: [
-                        Math.round(resting + (maxHR - resting) * 0.8),
-                        Math.round(resting + (maxHR - resting) * 0.9),
-                      ],
-                      z5: [Math.round(resting + (maxHR - resting) * 0.9), maxHR],
-                    },
-                  },
+                setForm({ ...form, hrZones: defaultHRZones(maxHR, resting) });
+                setHrDraft((d) => {
+                  const n = { ...d };
+                  delete n.rest;
+                  return n;
                 });
               }}
+              onFocus={(e) => e.target.select()}
             />
           </label>
         </div>
@@ -1123,16 +1101,22 @@ function ProfileEditor({
             <input
               type="number"
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              value={(form as any).runningBaseline?.weeklyVolumeKm ?? 40}
+              value={
+                (form as any).runningBaseline?.weeklyVolumeKm === "" ||
+                (form as any).runningBaseline?.weeklyVolumeKm === undefined
+                  ? ""
+                  : (form as any).runningBaseline?.weeklyVolumeKm
+              }
               onChange={(e) =>
                 setForm({
                   ...form,
                   runningBaseline: {
                     ...((form as any).runningBaseline || {}),
-                    weeklyVolumeKm: Number(e.target.value) || 0,
+                    weeklyVolumeKm: e.target.value === "" ? ("" as any) : Number(e.target.value),
                   },
                 } as any)
               }
+              onFocus={(e) => e.target.select()}
             />
           </label>
           <label className="block">
@@ -1140,16 +1124,23 @@ function ProfileEditor({
             <input
               type="number"
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              value={(form as any).runningBaseline?.longestRunLast30DaysKm ?? 15}
+              value={
+                (form as any).runningBaseline?.longestRunLast30DaysKm === "" ||
+                (form as any).runningBaseline?.longestRunLast30DaysKm === undefined ||
+                (form as any).runningBaseline?.longestRunLast30DaysKm === null
+                  ? ""
+                  : (form as any).runningBaseline?.longestRunLast30DaysKm
+              }
               onChange={(e) =>
                 setForm({
                   ...form,
                   runningBaseline: {
                     ...((form as any).runningBaseline || {}),
-                    longestRunLast30DaysKm: Number(e.target.value) || 0,
+                    longestRunLast30DaysKm: e.target.value === "" ? ("" as any) : Number(e.target.value),
                   },
                 } as any)
               }
+              onFocus={(e) => e.target.select()}
             />
           </label>
         </div>
@@ -1187,24 +1178,24 @@ function ProfileEditor({
               <div key={z} className="space-y-1">
                 <div className="font-medium uppercase text-muted">{z}</div>
                 <div className="text-[10px] text-muted">{pct}</div>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  className="w-full bg-card border border-border rounded px-1 py-1.5 text-center text-foreground"
-                  value={zoneVal(z, 0)}
-                  onChange={(e) => setZoneTyping(z, 0, e.target.value)}
-                  onBlur={() => commitZone(z, 0)}
-                  onFocus={(e) => e.target.select()}
-                />
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  className="w-full bg-card border border-border rounded px-1 py-1.5 text-center text-foreground"
-                  value={zoneVal(z, 1)}
-                  onChange={(e) => setZoneTyping(z, 1, e.target.value)}
-                  onBlur={() => commitZone(z, 1)}
-                  onFocus={(e) => e.target.select()}
-                />
+                <select
+                  className="w-full bg-card border border-border rounded px-0.5 py-1.5 text-center text-foreground text-[11px]"
+                  value={form.hrZones.zones[z][0]}
+                  onChange={(e) => commitZoneSelect(z, 0, Number(e.target.value))}
+                >
+                  {Array.from({ length: 121 }, (_, i) => i + 80).map((bpm) => (
+                    <option key={`l${bpm}`} value={bpm}>{bpm}</option>
+                  ))}
+                </select>
+                <select
+                  className="w-full bg-card border border-border rounded px-0.5 py-1.5 text-center text-foreground text-[11px]"
+                  value={form.hrZones.zones[z][1]}
+                  onChange={(e) => commitZoneSelect(z, 1, Number(e.target.value))}
+                >
+                  {Array.from({ length: 121 }, (_, i) => i + 80).map((bpm) => (
+                    <option key={`h${bpm}`} value={bpm}>{bpm}</option>
+                  ))}
+                </select>
               </div>
             ))}
           </div>
@@ -1478,7 +1469,7 @@ function ProfileEditor({
                   {g.targetDate ? ` · ${g.targetDate}` : ""}
                   {g.metrics?.distanceKm ? ` · ${g.metrics.distanceKm} km` : ""}
                   {g.metrics?.timeMinutes ? ` · ${g.metrics.timeMinutes} min` : ""}
-                  {g.metrics?.paceMinPerKm ? ` · ${g.metrics.paceMinPerKm} min/km` : ""}
+                  {g.metrics?.paceMinPerKm ? ` · ${Math.floor(g.metrics.paceMinPerKm)}:${String(Math.round((g.metrics.paceMinPerKm % 1) * 60)).padStart(2, "0")}/km` : ""}
                   {g.metrics?.other ? ` · ${g.metrics.other}` : ""}
                   {g.metrics?.weightKg ? ` · ${g.metrics.weightKg} kg` : ""}
                   {g.metrics?.reps ? ` · ${g.metrics.reps} reps` : ""}
@@ -1544,7 +1535,7 @@ function ProfileEditor({
                 type="number"
                 step="0.1"
                 className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="Pace (min/km)"
+                placeholder="Pace (mm:ss /km)"
                 value={newGoalPace}
                 onChange={(e) => setNewGoalPace(e.target.value)}
               />
@@ -1832,7 +1823,9 @@ function PlanView({
       </div>
 
       {plan.notes && (
-        <p className="text-sm text-muted bg-card border border-border rounded-lg p-4">{plan.notes}</p>
+        <p className="text-sm text-muted bg-card border border-border rounded-lg px-4 py-3 leading-snug">
+          {plan.notes.split("\n")[0]}
+        </p>
       )}
 
       {/* Calendar */}
@@ -1901,14 +1894,34 @@ function PlanView({
         </div>
       </div>
 
-      {/* List */}
-      <div>
-        <h3 className="font-semibold mb-3">All sessions</h3>
-        <div className="space-y-2">
-          {sortedWorkouts.map((w) => (
-            <WorkoutCard key={w.id} workout={w} onToggle={onToggleComplete} onOpen={onOpenWorkout} />
-          ))}
-        </div>
+      {/* List grouped by week */}
+      <div className="space-y-6">
+        <h3 className="font-semibold">Sessions by week</h3>
+        {(() => {
+          const byWeek: { label: string; key: string; items: typeof sortedWorkouts }[] = [];
+          const map = new Map<string, typeof sortedWorkouts>();
+          sortedWorkouts.forEach((w) => {
+            const ws = startOfWeek(parseISO(w.date), { weekStartsOn: 1 });
+            const we = addDays(ws, 6);
+            const key = format(ws, "yyyy-MM-dd");
+            const label = `Week: ${format(ws, "d MMM")} – ${format(we, "d MMM")}`;
+            if (!map.has(key)) {
+              map.set(key, []);
+              byWeek.push({ label, key, items: map.get(key)! });
+            }
+            map.get(key)!.push(w);
+          });
+          return byWeek.map((week) => (
+            <div key={week.key}>
+              <h4 className="text-sm font-medium text-muted mb-2">{week.label}</h4>
+              <div className="space-y-2">
+                {week.items.map((w) => (
+                  <WorkoutCard key={w.id} workout={w} onToggle={onToggleComplete} onOpen={onOpenWorkout} />
+                ))}
+              </div>
+            </div>
+          ));
+        })()}
       </div>
     </div>
   );
@@ -1950,24 +1963,11 @@ function WorkoutCard({
               </span>
             </div>
             <p className="text-xs text-muted mt-0.5">
-              {format(parseISO(workout.date), "EEEE, MMM d")}
-              {workout.plannedDurationMin && ` · ${workout.plannedDurationMin} min`}
-              {workout.plannedDistanceKm && ` · ~${workout.plannedDistanceKm} km`}
-              {workout.plannedIntensity && ` · ${workout.plannedIntensity.toUpperCase()}`}
+              {format(parseISO(workout.date), "EEE d MMM")}
+              {workout.plannedDurationMin ? ` · ${workout.plannedDurationMin} min` : ""}
+              {workout.plannedDistanceKm ? ` · ~${workout.plannedDistanceKm} km` : ""}
+              {workout.plannedIntensity ? ` · ${workout.plannedIntensity.toUpperCase()}` : ""}
             </p>
-            <p className="text-sm text-muted mt-2">{workout.description}</p>
-            {isStrength && workout.exercises && (
-              <ul className="mt-3 space-y-1">
-                {workout.exercises.map((ex, i) => (
-                  <li key={i} className="text-sm flex gap-2">
-                    <span className="text-muted w-4">{i + 1}.</span>
-                    <span>
-                      {ex.name} — {ex.sets}×{ex.reps}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         </div>
       </div>
