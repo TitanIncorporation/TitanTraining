@@ -91,6 +91,8 @@ export default function TitanTraining() {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<"idle" | "ok" | "fail">("idle");
+  const [cloudMsg, setCloudMsg] = useState("");
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
 
   // Auth check
@@ -177,11 +179,20 @@ export default function TitanTraining() {
         });
         if (error) {
           console.warn("Cloud profile save error", error.message);
-          // local already saved — still success for user
+          setCloudStatus("fail");
+          setCloudMsg(error.message || "Cloud save failed — data kept on this device");
+        } else {
+          setCloudStatus("ok");
+          setCloudMsg("Saved on this device and in Supabase");
         }
+      } else {
+        setCloudStatus("fail");
+        setCloudMsg("Saved on this device only (not signed in)");
       }
     } catch (err) {
       console.error("Profile save failed", err);
+      setCloudStatus("fail");
+      setCloudMsg("Could not save profile");
       alert("Could not save profile locally. Please try again.");
     }
   };
@@ -290,7 +301,16 @@ export default function TitanTraining() {
         </div>
       </aside>
 
-      {/* Main content */}
+      {cloudStatus !== "idle" && (
+          <div
+            className={`mx-4 mt-2 px-3 py-2 rounded-lg text-xs ${
+              cloudStatus === "ok" ? "bg-success/15 text-success" : "bg-amber-500/15 text-amber-400"
+            }`}
+          >
+            {cloudMsg}
+          </div>
+        )}
+        {/* Main content */}
       <main className="flex-1 overflow-auto">
         <div className="max-w-5xl mx-auto p-4 md:p-8">
           {tab === "dashboard" && (
@@ -1606,12 +1626,30 @@ function ProfileEditor({
               <option value="strength">Strength</option>
               <option value="custom">Custom</option>
             </select>
-            <input
-              type="date"
-              className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              value={newGoalDate}
-              onChange={(e) => setNewGoalDate(e.target.value)}
-            />
+            <div className="relative flex gap-1">
+              <input
+                type="date"
+                className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm min-w-0"
+                value={newGoalDate}
+                onChange={(e) => setNewGoalDate(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Backspace" || e.key === "Delete") {
+                    e.preventDefault();
+                    setNewGoalDate("");
+                  }
+                }}
+              />
+              {newGoalDate && (
+                <button
+                  type="button"
+                  className="px-2 text-xs text-muted border border-border rounded-lg shrink-0"
+                  onClick={() => setNewGoalDate("")}
+                  title="Clear date"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Running targets */}

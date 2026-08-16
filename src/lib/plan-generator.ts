@@ -86,6 +86,37 @@ function weeklyHours(profile: AthleteProfile): number {
   );
 }
 
+/** Mon=0 … Sun=6 (weekStartsOn Monday) */
+const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+
+function dayAvailabilityMin(profile: AthleteProfile, dayOffset: number): number {
+  const key = DAY_KEYS[((dayOffset % 7) + 7) % 7];
+  const hours = (profile.weeklyAvailability as any)[key] || 0;
+  // 2.5 means "+2h" in UI — treat as 150 min
+  return Math.round(hours * 60);
+}
+
+function availableDayOffsets(profile: AthleteProfile): number[] {
+  return DAY_KEYS.map((_, i) => i).filter((i) => dayAvailabilityMin(profile, i) > 0);
+}
+
+function capDuration(desiredMin: number, dayMin: number): number {
+  if (dayMin <= 0) return 0;
+  return Math.max(10, Math.min(desiredMin, dayMin));
+}
+
+function pickLongRunDay(profile: AthleteProfile, avoid: number[]): number {
+  const avail = availableDayOffsets(profile);
+  const ranked = [...avail].sort(
+    (a, b) => dayAvailabilityMin(profile, b) - dayAvailabilityMin(profile, a)
+  );
+  for (const d of ranked) {
+    if (!avoid.includes(d)) return d;
+  }
+  return ranked[0] ?? 6;
+}
+
+
 function highestPriorityGoals(goals: Goal[], limit = 3): Goal[] {
   return [...goals].sort((a, b) => b.priority - a.priority).slice(0, limit);
 }
@@ -201,18 +232,45 @@ export function generateTrainingPlan(
     }
   }
 
+  const availOffsets = availableDayOffsets(profile);
+  const constraintWarnings: string[] = [];
+  const maxDayMin = Math.max(0, ...DAY_KEYS.map((_, i) => dayAvailabilityMin(profile, i)));
+  const hasMarathonGoal = topGoals.some(
+    (g) =>
+      (g.metrics?.distanceKm && g.metrics.distanceKm >= 30) ||
+      /marathon/i.test(g.title)
+  );
+  if (hasMarathonGoal && (hours < 4 || maxDayMin < 75)) {
+    constraintWarnings.push(
+      `Constraint callout: A marathon-level goal with only ~${hours.toFixed(1)} h/week (longest available day ${maxDayMin} min) is not compatible with standard long-run progression. Sessions are capped to your stated availability. Consider more time on at least one day, or adjust the goal timeline.`
+    );
+  }
+  if (hours > 0 && hours < 2.5 && (isRunner || doesStrength)) {
+    constraintWarnings.push(
+      `Low weekly availability (~${hours.toFixed(1)} h). Plan prioritizes recovery and short quality; full race prep may not be realistic until hours increase.`
+    );
+  }
+
   for (let w = 0; w < weeks; w++) {
     const weekStart = addWeeks(start, w);
     const isDeload = w === weeks - 1;
     const progress = isDeload ? 0.75 : 1 + w * 0.06;
 
+    // Schedule only on days with availability; longest session on the day with most minutes
+    const days = availOffsets.length ? availOffsets : [1, 3, 5];
+    const longDay = pickLongRunDay(profile, []);
+    const otherDays = days.filter((d) => d !== longDay).sort((a, b) => a - b);
+
     // ========== RUNNING ==========
-    if (isRunner && runDays >= 2) {
-      // Easy runs (majority of volume)
-      const easySlots = runDays >= 4 ? [1, 3, 5] : runDays === 3 ? [1, 4] : [2];
-      easySlots.forEach((dayOffset, idx) => {
+    if (isRunner && runDays >= 1) {
+      // Easy runs on non-long days (respect count)
+      const easyCount = Math.max(0, Math.min(runDays - 1, otherDays.length));
+      otherDays.slice(0, easyCount).forEach((dayOffset, idx) => {
+        const dayMin = dayAvailabilityMin(profile, dayOffset);
+        if (dayMin <= 0) return;
+        const desired = Math.round(easyBase * progress * (idx === 0 ? 1 : 0.9));
+        const duration = capDuration(desired, dayMin);
         const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
-        const duration = Math.round(easyBase * progress * (idx === 0 ? 1 : 0.9));
         const trailEasy = primaryIsTrail && idx === 1;
 
         workouts.push(
@@ -221,10 +279,9 @@ export function generateTrainingPlan(
             trailEasy ? "trail_run" : "easy_run",
             primaryIsTrail ? "trail_running" : "running",
             trailEasy ? "Trail Aerobic" : "Easy Run (Z2)",
-            `Aerobic base. Keep effort conversational (mostly Zone 2).
-Focus on relaxed form and consistent breathing.
-${primaryIsTrail ? "Prefer trails with gentle rolling terrain when possible." : ""}
-This session builds mitochondrial density and fatigue resistance without high stress.`,
+            `Aerobic base (${duration} min, capped to your ${dayMin} min availability this day). Conversational Zone 2. Relaxed form.${
+              duration < desired ? " Shortened to fit the day." : ""
+            }`,
             {
               plannedDurationMin: duration,
               plannedIntensity: "z2",
@@ -235,79 +292,87 @@ This session builds mitochondrial density and fatigue resistance without high st
         );
       });
 
-      // One quality session
-      if (runDays >= 3) {
-        const qDate = format(addDays(weekStart, 2), "yyyy-MM-dd");
-        const qDur = Math.round(qualityBase * (isDeload ? 0.7 : progress));
+      // Quality: mid-week if a free day remains and runDays >= 3
+      if (runDays >= 3 && otherDays.length > easyCount) {
+        const qDay = otherDays[easyCount] ?? otherDays[0];
+        const dayMin = dayAvailabilityMin(profile, qDay);
+        if (dayMin > 0) {
+          const qDate = format(addDays(weekStart, qDay), "yyyy-MM-dd");
+          const qDur = capDuration(Math.round(qualityBase * (isDeload ? 0.7 : progress)), dayMin);
+          if (w % 2 === 0) {
+            workouts.push(
+              createWorkout(
+                qDate,
+                "tempo",
+                "running",
+                "Tempo / Threshold",
+                `Warm-up 8–12 min Z1–Z2.
+Main: continuous tempo (top Z3 / low Z4) within ${qDur} min total (day budget ${dayMin} min).
+Cool-down easy.
+Target: threshold durability for your priority race.`,
+                { plannedDurationMin: qDur, plannedIntensity: "z3" }
+              )
+            );
+          } else {
+            const reps = isDeload ? 4 : 5;
+            workouts.push(
+              createWorkout(
+                qDate,
+                "intervals",
+                "running",
+                "VO2max Intervals",
+                `Warm-up 10–12 min Z1–Z2 + 2–3 strides.
+Main: ${reps} × 3 min hard (Z4–Z5) / 90–120 s jog, within ${qDur} min total.
+Cool-down easy.
+Stop the set early if form breaks down.`,
+                { plannedDurationMin: qDur, plannedIntensity: "z5" }
+              )
+            );
+          }
+        }
+      }
 
-        if (w % 2 === 0) {
-          // Tempo / Threshold
+      // Long run — always on the day with the most available minutes
+      {
+        const dayMin = dayAvailabilityMin(profile, longDay);
+        if (dayMin > 0) {
+          const longDate = format(addDays(weekStart, longDay), "yyyy-MM-dd");
+          const desired = Math.round(longBase * progress * (isDeload ? 0.8 : 1));
+          const longDur = capDuration(desired, dayMin);
           workouts.push(
             createWorkout(
-              qDate,
-              "tempo",
-              "running",
-              "Tempo / Threshold",
-              `Warm-up 12–15 min Z1–Z2.
-Main: ${Math.round(16 + w * 3)} min continuous tempo (top Z3 / low Z4) — talk in short phrases only.
-Cool-down 8–10 min easy.
-Target: threshold durability for your priority race. If goal pace is set, tempo ≈ slightly slower than goal 10k effort.`,
+              longDate,
+              primaryIsTrail ? "trail_run" : "long_run",
+              primaryIsTrail ? "trail_running" : "running",
+              primaryIsTrail ? "Long Trail Run" : "Long Run",
+              `Long run ${longDur} min (~Z2)${
+                longDur < desired
+                  ? ` — capped from ~${desired} min to your ${dayMin} min availability this day`
+                  : ""
+              }. Baseline longest: ${longestRecent || "n/a"} km.
+${primaryIsTrail ? "Trail: elevation + fueling practice when possible." : "Road: steady aerobic; fuel if >75 min."}
+Finish tired, not broken.`,
               {
-                plannedDurationMin: qDur,
-                plannedIntensity: "z3",
-              }
-            )
-          );
-        } else {
-          // VO2 intervals
-          workouts.push(
-            createWorkout(
-              qDate,
-              "intervals",
-              "running",
-              "VO2max Intervals",
-              `Warm-up 15 min easy + 2–3 strides.
-Main set: 5–6 × (3 min hard Zone 4–5 / 90–120 s easy jog).
-Cool-down 10 min.
-
-Purpose: improve maximal aerobic capacity and running economy at higher speeds.
-Stop if form collapses.`,
-              {
-                plannedDurationMin: qDur,
-                plannedIntensity: "z5",
+                plannedDurationMin: longDur,
+                plannedDistanceKm:
+                  Math.round((longDur / 60) * (exp === "beginner" ? 8 : 9) * 10) / 10,
+                plannedIntensity: "z2",
               }
             )
           );
         }
       }
-
-      // Long run
-      const longDate = format(addDays(weekStart, 6), "yyyy-MM-dd");
-      const longDur = Math.round(longBase * progress * (isDeload ? 0.8 : 1));
-      workouts.push(
-        createWorkout(
-          longDate,
-          primaryIsTrail ? "trail_run" : "long_run",
-          primaryIsTrail ? "trail_running" : "running",
-          primaryIsTrail ? "Long Trail Run" : "Long Run",
-          `Long run ${longDur} min (~Z2). Build from Baseline longest (${longestRecent || "n/a"} km).
-${primaryIsTrail ? "Trail: seek elevation; practice fueling + downhill control." : "Road: steady aerobic; fuel if >75 min."}
-Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
-          {
-            plannedDurationMin: longDur,
-            plannedDistanceKm:
-              Math.round((longDur / 60) * (exp === "beginner" ? 8 : 9) * 10) / 10,
-            plannedIntensity: "z2",
-          }
-        )
-      );
     }
 
-    // ========== STRENGTH / HYPERTROPHY (Mentzer-inspired default) ==========
+    // ========== STRENGTH ==========
     if (doesStrength && strengthDays > 0) {
-      const sDays = strengthDays === 2 ? [0, 3] : [1]; // Mon + Thu or Tue
+      // Prefer weekdays with availability that are not the long-run day
+      const strengthCandidates = days.filter((d) => d !== longDay);
+      const sDays = (strengthCandidates.length ? strengthCandidates : days).slice(0, strengthDays);
 
       sDays.forEach((dayOffset, idx) => {
+        const dayMin = dayAvailabilityMin(profile, dayOffset);
+        if (dayMin <= 0) return;
         const date = format(addDays(weekStart, dayOffset), "yyyy-MM-dd");
         const isUpperFocus = idx === 0; // first session of week = upper bias
 
@@ -444,7 +509,7 @@ Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
             title,
             description,
             {
-              plannedDurationMin: 45,
+              plannedDurationMin: capDuration(45, dayMin),
               exercises,
             }
           )
@@ -490,12 +555,13 @@ Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
         : "New block from Baseline only (no hard-coded athlete defaults).",
       `Goal focus: ${goalSummary || "General development"}.`,
       isRunner
-        ? `Running: ${runDays} days/week · easy Z2 base · 1 quality (tempo or intervals) · long run progressing from ~${Math.round(longBase * 0.85)} toward ~${longBase} min · weekly volume anchor ${weeklyKm || "n/a"} km · surface ${primaryIsTrail ? "Trail bias" : "Road"}.`
+        ? `Running: up to ${runDays} days/week · easy Z2 · quality when days allow · long run on your longest available day (capped to that day's hours) · weekly volume anchor ${weeklyKm || "n/a"} km · ${primaryIsTrail ? "Trail bias" : "Road"}.`
         : "Running: not selected in Baseline.",
       doesStrength
-        ? `Strength: ${strengthDays} day(s)/week · approach ${approachLabels.join("; ") || "Default"} · physique ${physiqueLabels.join(", ") || "Full body"} · equipment-constrained · lower body managed around long-run days.`
+        ? `Strength: ${strengthDays} day(s)/week · approach ${approachLabels.join("; ") || "Default"} · physique ${physiqueLabels.join(", ") || "Full body"} · sessions capped to daily availability.`
         : "Strength: not selected.",
-      `Load budget: ~${hours.toFixed(1)} h/week across ${trainingDays} training days. Final week = Deload (~25% less intensity/volume).`,
+      `Load budget: ~${hours.toFixed(1)} h/week across your available days. Every session duration is limited by that day's hours. Final week = Deload.`,
+      ...constraintWarnings,
     ].join(" "),
   };
 }
