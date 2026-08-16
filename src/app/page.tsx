@@ -32,6 +32,28 @@ import {
 import Auth from "@/components/Auth";
 import WorkoutDetail from "@/components/WorkoutDetail";
 
+import {
+  LayoutDashboard,
+  User,
+  Calendar,
+  TrendingUp,
+  Dumbbell,
+  Mountain,
+  RefreshCw,
+  Download,
+  Upload,
+  Plus,
+  CheckCircle2,
+  Circle,
+  Shield,
+  ChevronDown,
+  ChevronRight,
+  LogOut,
+} from "lucide-react";
+import { format, parseISO, isToday, isFuture, isPast, startOfWeek , addDays} from "date-fns";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
+
+
 function ConstraintsBox({
   value,
   onSubmit,
@@ -95,27 +117,6 @@ function formatWorkoutType(type: string): string {
   };
   return map[type] || type.replace(/_/g, " ");
 }
-
-import {
-  LayoutDashboard,
-  User,
-  Calendar,
-  TrendingUp,
-  Dumbbell,
-  Mountain,
-  RefreshCw,
-  Download,
-  Upload,
-  Plus,
-  CheckCircle2,
-  Circle,
-  Shield,
-  ChevronDown,
-  ChevronRight,
-  LogOut,
-} from "lucide-react";
-import { format, parseISO, isToday, isFuture, isPast, startOfWeek , addDays} from "date-fns";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 type Tab = "dashboard" | "profile" | "plan" | "sync";
 
@@ -415,7 +416,7 @@ export default function TitanTraining() {
               onGenerate={handleGeneratePlan}
               generating={generating}
               setTab={setTab}
-              onConstraintsChange={handleConstraintsChange}
+              onOpenWorkout={setSelectedWorkout}
             />
           )}
           {tab === "profile" && (
@@ -461,7 +462,7 @@ function Dashboard({
   onGenerate,
   generating,
   setTab,
-  onConstraintsChange,
+  onOpenWorkout,
 }: {
   profile: AthleteProfile | null;
   plan: TrainingPlan | null;
@@ -469,7 +470,7 @@ function Dashboard({
   onGenerate: () => void;
   generating: boolean;
   setTab: (t: Tab) => void;
-  onConstraintsChange: (text: string) => void;
+  onOpenWorkout: (w: Workout) => void;
 }) {
   if (!profile) {
     return (
@@ -510,24 +511,97 @@ function Dashboard({
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="Current Plan" value={plan ? "Active" : "None"} sub={plan?.name ?? undefined} />
         <StatCard
-          label="Top goal"
-          value={profile.goals.find((g) => g.priority === 5)?.title || profile.goals.sort((a, b) => b.priority - a.priority)[0]?.title || "—"}
-          sub="Priority focus"
+          label="Current plan"
+          value={plan ? "Active" : "None"}
+          sub={plan ? `${format(parseISO(plan.startDate), "d MMM")} – ${format(parseISO(plan.endDate), "d MMM")}` : "Generate from profile"}
         />
         <StatCard
-          label="Fitness level"
-          value={((profile as any).fitnessLevel || profile.experienceLevel || "—") as string}
-          sub={`${profile.sports.length} sports`}
+          label="Top goal"
+          value={
+            [...(profile.goals || [])].sort((a, b) => b.priority - a.priority)[0]?.title || "—"
+          }
+          sub={
+            [...(profile.goals || [])].sort((a, b) => b.priority - a.priority)[0]?.targetDate
+              ? format(
+                  parseISO(
+                    [...(profile.goals || [])].sort((a, b) => b.priority - a.priority)[0]
+                      .targetDate as string
+                  ),
+                  "d MMM yyyy"
+                )
+              : "No date set"
+          }
+        />
+        <StatCard
+          label="This week"
+          value={
+            plan
+              ? `${plan.workouts.filter((w) => {
+                  const d = parseISO(w.date);
+                  const now = new Date();
+                  const ws = startOfWeek(now, { weekStartsOn: 1 });
+                  const we = addDays(ws, 6);
+                  return d >= ws && d <= we;
+                }).length} sessions`
+              : "—"
+          }
+          sub={
+            plan
+              ? `${plan.workouts.filter((w) => {
+                  const d = parseISO(w.date);
+                  const now = new Date();
+                  const ws = startOfWeek(now, { weekStartsOn: 1 });
+                  const we = addDays(ws, 6);
+                  return d >= ws && d <= we && w.completed;
+                }).length} done`
+              : undefined
+          }
         />
       </div>
 
-      <ConstraintsBox
-        value={profile.constraints || ""}
-        onSubmit={onConstraintsChange}
-        generating={generating}
-      />
+      {/* Goals */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-semibold">Goals</h3>
+          <button
+            type="button"
+            className="text-xs text-accent"
+            onClick={() => setTab("profile")}
+          >
+            Edit in profile
+          </button>
+        </div>
+        {(profile.goals || []).length === 0 ? (
+          <p className="text-sm text-muted">No goals yet. Add them in Profile.</p>
+        ) : (
+          <ul className="space-y-2">
+            {[...(profile.goals || [])]
+              .sort((a, b) => b.priority - a.priority)
+              .map((g) => (
+                <li
+                  key={g.id}
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm border border-border rounded-lg px-3 py-2"
+                >
+                  <div>
+                    <span className="font-medium">{g.title}</span>
+                    {g.priority >= 5 && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-accent">
+                        Top priority
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted">
+                    {g.targetDate
+                      ? format(parseISO(g.targetDate), "d MMM yyyy")
+                      : "No date"}
+                    {g.sport ? ` · ${String(g.sport).replace(/_/g, " ")}` : ""}
+                  </div>
+                </li>
+              ))}
+          </ul>
+        )}
+      </div>
 
       {/* CTA */}
       {!plan && (
@@ -556,43 +630,39 @@ function Dashboard({
         </div>
       )}
 
-      {/* Progress snapshot (merged from old Progress tab) */}
+      {/* Progress snapshot */}
       {plan && (
         <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-          <h3 className="font-semibold">Progress & trajectory</h3>
+          <div className="flex flex-col gap-1 min-w-0">
+            <h3 className="font-semibold">Progress & trajectory</h3>
+            <p className="text-xs text-muted break-words">{plan.name}</p>
+          </div>
           <div className="h-2 bg-background rounded-full overflow-hidden">
             <div
               className="h-full bg-accent rounded-full transition-all"
               style={{ width: `${totalPlanned ? Math.round((completedCount / totalPlanned) * 100) : 0}%` }}
             />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-            <div>
-              <p className="text-xs text-muted uppercase tracking-wide">Completion</p>
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div className="min-w-0">
+              <p className="text-xs text-muted uppercase tracking-wide">Done</p>
               <p className="text-lg font-semibold mt-0.5">
                 {totalPlanned ? `${Math.round((completedCount / totalPlanned) * 100)}%` : "—"}
               </p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-muted uppercase tracking-wide">Sessions</p>
               <p className="text-lg font-semibold mt-0.5">{completedCount}/{totalPlanned}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted uppercase tracking-wide">Planned load</p>
+            <div className="min-w-0">
+              <p className="text-xs text-muted uppercase tracking-wide">Load</p>
               <p className="text-lg font-semibold mt-0.5">
                 {Math.round(plan.workouts.reduce((s, w) => s + (w.plannedDurationMin || 0), 0) / 60)}h
               </p>
             </div>
-            <div>
-              <p className="text-xs text-muted uppercase tracking-wide">Block</p>
-              <p className="text-sm font-semibold mt-0.5 truncate">{plan.name}</p>
-            </div>
           </div>
           <p className="text-xs text-muted leading-relaxed">
-            Consistency beats perfection. Mark sessions done so the next update keeps history and adapts load.
-            {profile.goals.filter((g) => g.priority === 5).length > 0
-              ? ` Top focus: ${profile.goals.filter((g) => g.priority === 5).map((g) => g.title).join(", ")}.`
-              : ""}
+            Mark sessions done so history is kept when the plan updates.
           </p>
         </div>
       )}
@@ -603,27 +673,29 @@ function Dashboard({
           <h3 className="font-semibold mb-3">Upcoming Workouts</h3>
           <div className="space-y-2">
             {upcoming.map((w) => (
-              <div
+              <button
+                type="button"
                 key={w.id}
-                className="bg-card border border-border rounded-lg px-4 py-3 flex items-center justify-between"
+                onClick={() => onOpenWorkout(w)}
+                className="w-full text-left bg-card border border-border rounded-lg px-4 py-3 flex items-center justify-between hover:border-accent/50 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <div
-                    className={`w-2 h-2 rounded-full ${
+                    className={`w-2 h-2 rounded-full shrink-0 ${
                       isToday(parseISO(w.date)) ? "bg-accent" : "bg-muted"
                     }`}
                   />
-                  <div>
-                    <p className="font-medium text-sm">{w.title}</p>
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate">{w.title}</p>
                     <p className="text-xs text-muted">
                       {format(parseISO(w.date), "EEE, MMM d")} · {w.plannedDurationMin} min
                     </p>
                   </div>
                 </div>
-                <span className="text-xs px-2 py-1 rounded bg-background text-muted capitalize">
+                <span className="text-xs px-2 py-1 rounded bg-background text-muted capitalize shrink-0 ml-2">
                   {formatWorkoutType(w.type)}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </div>

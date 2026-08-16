@@ -171,6 +171,8 @@ function buildPlanNotes(o: {
   maxAvailMin: number;
   trainingDaysPerWeek?: number;
   physiqueFocus?: string;
+  secondaryGoal?: string;
+  otherSports?: string[];
   hasMarathonGoal: boolean;
   constraintWarnings: string[];
   profileConstraints: string;
@@ -193,16 +195,26 @@ function buildPlanNotes(o: {
     .join(" · ");
 
   const line2Parts: string[] = [];
-  if (o.sport2) line2Parts.push(`Secondary sport: ${o.sport2}`);
-  if (o.physiqueFocus) line2Parts.push(`Physique focus: ${o.physiqueFocus}`);
+  // Always lead with Secondary sport label
+  line2Parts.push(
+    o.sport2 ? `Secondary sport: ${o.sport2}` : "Secondary sport: —"
+  );
+  // Sport-specific extras (strength / hypertrophy)
+  const sec = (o.sport2 || "").toLowerCase();
+  if (sec.includes("strength") || sec.includes("hypertrophy")) {
+    if (o.physiqueFocus) line2Parts.push(`Physique focus: ${o.physiqueFocus}`);
+    if (o.secondaryGoal) line2Parts.push(`Secondary goal: ${o.secondaryGoal}`);
+  } else if (o.secondaryGoal) {
+    line2Parts.push(`Secondary goal: ${o.secondaryGoal}`);
+  }
   if (o.additionalConsiderations) {
     line2Parts.push(`Additional: ${o.additionalConsiderations}`);
   }
-  const line2 = line2Parts.length
-    ? line2Parts.join(" · ")
-    : o.isRunner
-      ? "Secondary: —"
-      : "Secondary: —";
+  const others = (o.otherSports || []).filter(Boolean);
+  if (others.length) {
+    line2Parts.push(`Other sports: ${others.join(", ")}`);
+  }
+  const line2 = line2Parts.join(" · ");
 
   const days = o.trainingDaysPerWeek || Math.max(o.runDays + o.strengthDays, 1);
   const line3 =
@@ -895,10 +907,27 @@ export function generateTrainingPlan(
             physiqueLabels.join(", ") ||
             undefined)
         : undefined,
+      secondaryGoal: (profile.goals || [])
+        .slice()
+        .sort((a, b) => b.priority - a.priority)
+        .find(
+          (g) =>
+            g.sport === "strength" ||
+            (g.type || "").includes("strength") ||
+            (g.type || "").includes("hypertrophy") ||
+            /squat|bench|deadlift|1rm|hypertrophy/i.test(g.title || "")
+        )?.title,
+      otherSports: (profile.sports || [])
+        .filter(
+          (s) =>
+            s !== profile.primarySport &&
+            s !== (profile as any).secondarySport
+        )
+        .map((s) => labelApproach(String(s).replace(/_/g, " "))),
       hasMarathonGoal,
       constraintWarnings,
       profileConstraints: (profile.constraints || "").trim(),
-      additionalConsiderations: (profile as any).additionalConsiderations || profile.notes || "",
+      additionalConsiderations: (profile as any).additionalConsiderations || "",
       previousPlan: !!previousPlan,
     }),
     // trainingRaces available for notes via constraintWarnings
