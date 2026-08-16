@@ -91,6 +91,8 @@ export interface RunningBaseline {
   weeklyVolumeKm: number;
   longestRunLast30DaysKm: number;
   preferredSurface: "road" | "trail" | "mixed";
+  /** 0=Mon … 6=Sun (same as plan generator). Availability still wins. */
+  preferredLongRunDay?: number | null;
 }
 
 export interface StrengthBaseline {

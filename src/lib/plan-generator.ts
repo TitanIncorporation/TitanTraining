@@ -315,8 +315,47 @@ export function generateTrainingPlan(
     if (isRunner) {
       const targetRunDays = Math.min(runDays, daysWithTime.length);
 
-      // 1) Longest remaining day → long / main aerobic
-      const longD = takeDay(daysWithTime);
+      // 1) Preferred long-run day if it has enough time; else longest available
+      const prefRaw = (profile.runningBaseline as any)?.preferredLongRunDay;
+      const prefDay =
+        prefRaw === null || prefRaw === undefined || prefRaw === ""
+          ? null
+          : Number(prefRaw);
+      const MIN_LONG_PREFER = 45; // prefer not to force "long" on a 30 min day
+      let longD: number | null = null;
+      if (
+        prefDay != null &&
+        Number.isFinite(prefDay) &&
+        dayBudget[prefDay] != null &&
+        dayBudget[prefDay] >= 15 &&
+        !usedDays.has(prefDay)
+      ) {
+        if (dayBudget[prefDay] >= MIN_LONG_PREFER) {
+          longD = prefDay;
+        } else {
+          // User asked for this day but availability is tight — still use it for the "main" run but call out
+          longD = prefDay;
+          if (w === 0) {
+            constraintWarnings.push(
+              `Long-run day: you preferred ${DAY_KEYS[prefDay]}, but that day only has ${dayBudget[prefDay]} min. Session is capped to availability (not a full long run).`
+            );
+          }
+        }
+      }
+      if (longD == null) {
+        longD = takeDay(daysWithTime);
+        if (
+          w === 0 &&
+          prefDay != null &&
+          Number.isFinite(prefDay) &&
+          longD != null &&
+          longD !== prefDay
+        ) {
+          constraintWarnings.push(
+            `Long-run day: preferred ${DAY_KEYS[prefDay]} was unavailable or off; placed on ${DAY_KEYS[longD]} (more available time). Availability always wins.`
+          );
+        }
+      }
       if (longD != null) {
         const dayMin = dayBudget[longD];
         const desired = Math.round(longBaseCapped * progress * (isDeload ? 0.8 : 1));
@@ -580,6 +619,9 @@ export function generateTrainingPlan(
         : "New block from Baseline only.",
       `Goal focus: ${goalSummary || "General development"}.`,
       `Availability (minutes): ${DAY_KEYS.map((k, i) => `${k.slice(0, 3)} ${dayAvailabilityMin(profile, i)}`).join(" · ")}. Longest day ${maxAvailMin} min. Weekly total ~${hours.toFixed(1)} h.`,
+      (profile.runningBaseline as any)?.preferredLongRunDay != null
+        ? `Preferred long-run day: ${DAY_KEYS[Number((profile.runningBaseline as any).preferredLongRunDay)] || "auto"} (moved if that day has too little time).`
+        : `Preferred long-run day: auto (day with most hours).`,
       isRunner
         ? `Running: sessions only on days with hours > 0; each duration ≤ that day's minutes; long run on longest day (≤ ${maxAvailMin} min). Volume anchor ${weeklyKm || "n/a"} km.`
         : "Running: not selected.",

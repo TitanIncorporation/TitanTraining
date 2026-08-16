@@ -588,6 +588,7 @@ function ProfileEditor({
         weeklyVolumeKm: 40,
         longestRunLast30DaysKm: 18,
         preferredSurface: "mixed",
+        preferredLongRunDay: 6,
       },
       strengthBaseline: {
         experience: "intermediate",
@@ -1185,6 +1186,40 @@ function ProfileEditor({
               <option value="trail">Trail</option>
               <option value="mixed">Mixed</option>
             </select>
+          </label>
+          <label className="block">
+            <span className="text-sm mb-1 block">Preferred long-run day</span>
+            <select
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+              value={
+                (form as any).runningBaseline?.preferredLongRunDay === null ||
+                (form as any).runningBaseline?.preferredLongRunDay === undefined
+                  ? ""
+                  : String((form as any).runningBaseline.preferredLongRunDay)
+              }
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  runningBaseline: {
+                    ...((form as any).runningBaseline || {}),
+                    preferredLongRunDay:
+                      e.target.value === "" ? null : Number(e.target.value),
+                  },
+                } as any)
+              }
+            >
+              <option value="">Auto (longest available day)</option>
+              <option value="0">Monday</option>
+              <option value="1">Tuesday</option>
+              <option value="2">Wednesday</option>
+              <option value="3">Thursday</option>
+              <option value="4">Friday</option>
+              <option value="5">Saturday</option>
+              <option value="6">Sunday</option>
+            </select>
+            <p className="text-[10px] text-muted mt-1">
+              Availability still wins: if that day has too little time, long run moves and we note it in the plan.
+            </p>
           </label>
           <label className="block">
             <span className="text-sm mb-1 block">Weekly volume (km)</span>
@@ -2201,35 +2236,40 @@ function SyncView({ plan }: { plan: TrainingPlan | null }) {
       <div>
         <h2 className="text-2xl font-semibold">Data &amp; Sync</h2>
         <p className="text-muted mt-1">
-          Your profile, training plan, and workouts are stored securely in your private cloud when you save.
+          Import past activity and connect Strava as your source of truth.
         </p>
       </div>
 
-      <div className="bg-card border border-border rounded-xl p-5 space-y-2">
-        <h3 className="font-medium">Synced data</h3>
-        <ul className="text-sm text-muted space-y-1 list-disc pl-5">
-          <li>Athlete profile / Baseline</li>
-          <li>Training plans</li>
-          <li>Planned workouts</li>
-        </ul>
-        {plan && (
-          <p className="text-xs text-muted mt-2">
-            Current plan: {plan.name} ({plan.workouts?.length || 0} sessions)
-          </p>
-        )}
-      </div>
-
-      <div className="bg-card border border-border rounded-xl p-5 space-y-2">
-        <h3 className="font-medium">Strava</h3>
+      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+        <h3 className="font-medium">1. Import history</h3>
         <p className="text-sm text-muted">
-          Connect Strava to import activities and match them to planned sessions.
+          Pull past runs and rides (from Strava once connected) into Titan so plans can use your real training history.
         </p>
         <button
           type="button"
           disabled
           className="px-4 py-2 rounded-lg bg-background border border-border text-sm text-muted cursor-not-allowed"
         >
-          Connect Strava (coming next)
+          Import history (requires Strava)
+        </button>
+        {plan && (
+          <p className="text-xs text-muted">
+            Current plan in app: {plan.name} ({plan.workouts?.length || 0} sessions)
+          </p>
+        )}
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+        <h3 className="font-medium">2. Connect Strava</h3>
+        <p className="text-sm text-muted">
+          Link your Strava account. New activities will sync here and can be matched to planned sessions.
+        </p>
+        <button
+          type="button"
+          disabled
+          className="px-4 py-2 rounded-lg bg-accent/80 text-white text-sm cursor-not-allowed opacity-70"
+        >
+          Connect Strava (next)
         </button>
       </div>
     </div>
