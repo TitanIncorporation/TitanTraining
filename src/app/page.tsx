@@ -540,6 +540,7 @@ function ProfileEditor({
   const [newGoalDistance, setNewGoalDistance] = useState("");
   const [newGoalTime, setNewGoalTime] = useState("");
   const [newGoalPace, setNewGoalPace] = useState("");
+  const [newGoalElevation, setNewGoalElevation] = useState("");
   const [newGoalExercise, setNewGoalExercise] = useState("");
   const [newGoalWeight, setNewGoalWeight] = useState("");
   const [newGoalReps, setNewGoalReps] = useState("");
