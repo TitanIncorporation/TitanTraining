@@ -80,7 +80,6 @@ const defaultEquipment: Equipment = {
   resistanceBands: true,
   weightedVest: true,
   plyoBox: true,
-  medicineBall: false,
   other: [],
 };
 
@@ -133,9 +132,27 @@ export default function TitanTraining() {
     return <Auth onAuth={() => supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))} />;
   }
 
-  const handleSaveProfile = (updated: AthleteProfile) => {
-    setProfile(updated);
-    saveProfile(updated);
+  const handleSaveProfile = async (updated: AthleteProfile) => {
+    // Data save is priority #1: local first, then cloud if available
+    try {
+      saveProfile(updated);
+      setProfile(updated);
+      try {
+        const { data: { user: u } } = await supabase.auth.getUser();
+        if (u) {
+          await supabase.from("profiles").upsert({
+            id: u.id,
+            data: updated,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } catch (cloudErr) {
+        console.warn("Cloud profile save skipped", cloudErr);
+      }
+    } catch (err) {
+      console.error("Profile save failed", err);
+      alert("Could not save profile. Please try again.");
+    }
   };
 
   const handleGeneratePlan = () => {
@@ -550,45 +567,56 @@ function ProfileEditor({
   const [physiqueOtherInput, setPhysiqueOtherInput] = useState("");
   const [equipmentOtherInput, setEquipmentOtherInput] = useState("");
 
-  const setZoneBound = (z: "z1"|"z2"|"z3"|"z4"|"z5", which: 0 | 1, raw: string) => {
-    if (raw === "") return; // allow clearing while typing without forcing 0
+  // Draft strings so mobile typing is not blocked; non-overlap on blur
+  const [zoneDraft, setZoneDraft] = useState<Record<string, string>>({});
+  const zoneVal = (z: string, which: 0 | 1) => {
+    const key = `${z}_${which}`;
+    if (key in zoneDraft) return zoneDraft[key];
+    return String(form.hrZones.zones[z as "z1"][which]);
+  };
+  const setZoneTyping = (z: "z1"|"z2"|"z3"|"z4"|"z5", which: 0 | 1, raw: string) => {
+    setZoneDraft((d) => ({ ...d, [`${z}_${which}`]: raw }));
+  };
+  const commitZone = (z: "z1"|"z2"|"z3"|"z4"|"z5", which: 0 | 1) => {
+    const key = `${z}_${which}`;
+    const raw = zoneDraft[key];
+    if (raw === undefined) return;
     const val = Number(raw);
-    if (Number.isNaN(val)) return;
+    if (raw === "" || Number.isNaN(val)) {
+      setZoneDraft((d) => {
+        const n = { ...d };
+        delete n[key];
+        return n;
+      });
+      return;
+    }
+    const zones = {
+      z1: [...form.hrZones.zones.z1] as [number, number],
+      z2: [...form.hrZones.zones.z2] as [number, number],
+      z3: [...form.hrZones.zones.z3] as [number, number],
+      z4: [...form.hrZones.zones.z4] as [number, number],
+      z5: [...form.hrZones.zones.z5] as [number, number],
+    };
+    zones[z][which] = val;
+    if (zones[z][0] > zones[z][1]) {
+      if (which === 0) zones[z][1] = zones[z][0];
+      else zones[z][0] = zones[z][1];
+    }
     const order: ("z1"|"z2"|"z3"|"z4"|"z5")[] = ["z1","z2","z3","z4","z5"];
-    const zones = { ...form.hrZones.zones };
-    const idx = order.indexOf(z);
-    let low = which === 0 ? val : zones[z][0];
-    let high = which === 1 ? val : zones[z][1];
-    if (low > high) {
-      if (which === 0) high = low;
-      else low = high;
-    }
-    // enforce non-overlap with neighbors
-    if (idx > 0) {
-      const prev = order[idx - 1];
-      if (low <= zones[prev][1]) low = zones[prev][1] + 1;
-      if (low > high) high = low;
-    }
-    if (idx < order.length - 1) {
-      const next = order[idx + 1];
-      if (high >= zones[next][0]) {
-        // push next start up
-        const nextLow = high + 1;
-        const nextHigh = Math.max(zones[next][1], nextLow);
-        zones[next] = [nextLow, nextHigh];
-        // cascade further if needed
-        for (let j = idx + 2; j < order.length; j++) {
-          const cur = order[j];
-          const prevZ = order[j - 1];
-          if (zones[cur][0] <= zones[prevZ][1]) {
-            const nl = zones[prevZ][1] + 1;
-            zones[cur] = [nl, Math.max(zones[cur][1], nl)];
-          }
-        }
+    for (let i = 0; i < order.length - 1; i++) {
+      const a = order[i];
+      const b = order[i + 1];
+      if (zones[b][0] <= zones[a][1]) {
+        zones[b][0] = zones[a][1] + 1;
+        if (zones[b][1] < zones[b][0]) zones[b][1] = zones[b][0];
       }
     }
-    zones[z] = [low, high];
     setForm({ ...form, hrZones: { ...form.hrZones, zones } });
+    setZoneDraft((d) => {
+      const n = { ...d };
+      delete n[key];
+      return n;
+    });
   };
 
 
@@ -695,12 +723,22 @@ function ProfileEditor({
     setEquipmentOtherInput("");
   };
 
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const handleSave = () => {
-    onSave({
-      ...form,
-      updatedAt: new Date().toISOString(),
-      createdAt: form.createdAt || new Date().toISOString(),
-    });
+    setSaving(true);
+    try {
+      onSave({
+        ...form,
+        updatedAt: new Date().toISOString(),
+        createdAt: form.createdAt || new Date().toISOString(),
+      });
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2500);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -841,28 +879,48 @@ function ProfileEditor({
             <span className="text-sm mb-1 block">Top priority sport</span>
             <select
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              value={form.primarySport}
+              value={form.sports.includes(form.primarySport) ? form.primarySport : (form.sports[0] || "")}
               onChange={(e) => setForm({ ...form, primarySport: e.target.value as any })}
             >
-              <option value="running">Road Running</option>
-              <option value="trail_running">Trail Running</option>
-              <option value="strength">Strength / Hypertrophy</option>
-              <option value="conditioning">Conditioning</option>
-              <option value="cycling">Cycling</option>
+              {form.sports.length === 0 && <option value="">Select sports first</option>}
+              {form.sports.includes("running") && <option value="running">Road Running</option>}
+              {form.sports.includes("trail_running") && <option value="trail_running">Trail Running</option>}
+              {form.sports.includes("strength") && <option value="strength">Strength / Hypertrophy</option>}
+              {form.sports.includes("conditioning") && <option value="conditioning">Conditioning</option>}
+              {form.sports.includes("cycling") && <option value="cycling">Cycling</option>}
+              {form.sports.includes("triathlon") && <option value="triathlon">Triathlon</option>}
+              {((form as any).customSportsList || []).map((s: string) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
             </select>
           </label>
           <label className="block">
             <span className="text-sm mb-1 block">Second priority sport</span>
             <select
               className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              value={(form as any).secondarySport || "strength"}
+              value={
+                form.sports.includes((form as any).secondarySport)
+                  ? (form as any).secondarySport
+                  : form.sports.find((s) => s !== form.primarySport) || ""
+              }
               onChange={(e) => setForm({ ...form, secondarySport: e.target.value } as any)}
             >
-              <option value="running">Road Running</option>
-              <option value="trail_running">Trail Running</option>
-              <option value="strength">Strength / Hypertrophy</option>
-              <option value="conditioning">Conditioning</option>
-              <option value="cycling">Cycling</option>
+              <option value="">None</option>
+              {form.sports.includes("running") && form.primarySport !== "running" && (
+                <option value="running">Road Running</option>
+              )}
+              {form.sports.includes("trail_running") && form.primarySport !== "trail_running" && (
+                <option value="trail_running">Trail Running</option>
+              )}
+              {form.sports.includes("strength") && form.primarySport !== "strength" && (
+                <option value="strength">Strength / Hypertrophy</option>
+              )}
+              {form.sports.includes("conditioning") && form.primarySport !== "conditioning" && (
+                <option value="conditioning">Conditioning</option>
+              )}
+              {form.sports.includes("cycling") && form.primarySport !== "cycling" && (
+                <option value="cycling">Cycling</option>
+              )}
             </select>
           </label>
         </div>
@@ -964,48 +1022,50 @@ function ProfileEditor({
         </label>
 
         <div>
-          <span className="text-sm mb-2 block">Hours available per day (optional detail)</span>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="text-muted text-xs">
-                  {(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]).map((d) => (
-                    <th key={d} className="font-normal pb-1 text-center w-[14.28%]">{d}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  {(
-                    ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
-                  ).map((day) => (
-                    <td key={day} className="px-0.5">
-                      <select
-                        className="w-full bg-background border border-border rounded-lg py-1.5 text-sm text-center"
-                        value={String(form.weeklyAvailability[day] || 0)}
-                        onChange={(e) => {
-                          const v = e.target.value === "2+" ? 2.5 : Number(e.target.value);
-                          setForm({
-                            ...form,
-                            weeklyAvailability: {
-                              ...form.weeklyAvailability,
-                              [day]: v,
-                            },
-                          });
-                        }}
-                      >
-                        <option value="0">0</option>
-                        <option value="0.5">0.5</option>
-                        <option value="1">1</option>
-                        <option value="1.5">1.5</option>
-                        <option value="2">2</option>
-                        <option value="2+">+2</option>
-                      </select>
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
+          <span className="text-sm mb-2 block">Hours available per day</span>
+          <p className="text-xs text-muted mb-2">Set hours for each day you train (no zero — use training days/week above for how many days).</p>
+          <div className="space-y-2">
+            {(
+              [
+                ["monday", "Monday"],
+                ["tuesday", "Tuesday"],
+                ["wednesday", "Wednesday"],
+                ["thursday", "Thursday"],
+                ["friday", "Friday"],
+                ["saturday", "Saturday"],
+                ["sunday", "Sunday"],
+              ] as const
+            ).map(([day, label]) => (
+              <div key={day} className="flex items-center gap-3">
+                <span className="w-24 text-sm text-muted shrink-0">{label}</span>
+                <select
+                  className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                  value={
+                    form.weeklyAvailability[day] === 2.5
+                      ? "2+"
+                      : form.weeklyAvailability[day] > 0
+                        ? String(form.weeklyAvailability[day])
+                        : "0.5"
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value === "2+" ? 2.5 : Number(e.target.value);
+                    setForm({
+                      ...form,
+                      weeklyAvailability: {
+                        ...form.weeklyAvailability,
+                        [day]: v,
+                      },
+                    });
+                  }}
+                >
+                  <option value="0.5">0.5 h</option>
+                  <option value="1">1 h</option>
+                  <option value="1.5">1.5 h</option>
+                  <option value="2">2 h</option>
+                  <option value="2+">+2 h</option>
+                </select>
+              </div>
+            ))}
           </div>
         </div>
       </ProfileSection>
@@ -1129,15 +1189,21 @@ function ProfileEditor({
                 <div className="text-[10px] text-muted">{pct}</div>
                 <input
                   type="number"
-                  className="w-full bg-card border border-border rounded px-1 py-1 text-center"
-                  value={form.hrZones.zones[z][0]}
-                  onChange={(e) => setZoneBound(z, 0, e.target.value)}
+                  inputMode="numeric"
+                  className="w-full bg-card border border-border rounded px-1 py-1.5 text-center text-foreground"
+                  value={zoneVal(z, 0)}
+                  onChange={(e) => setZoneTyping(z, 0, e.target.value)}
+                  onBlur={() => commitZone(z, 0)}
+                  onFocus={(e) => e.target.select()}
                 />
                 <input
                   type="number"
-                  className="w-full bg-card border border-border rounded px-1 py-1 text-center"
-                  value={form.hrZones.zones[z][1]}
-                  onChange={(e) => setZoneBound(z, 1, e.target.value)}
+                  inputMode="numeric"
+                  className="w-full bg-card border border-border rounded px-1 py-1.5 text-center text-foreground"
+                  value={zoneVal(z, 1)}
+                  onChange={(e) => setZoneTyping(z, 1, e.target.value)}
+                  onBlur={() => commitZone(z, 1)}
+                  onFocus={(e) => e.target.select()}
                 />
               </div>
             ))}
@@ -1580,7 +1646,6 @@ function ProfileEditor({
               ["resistanceBands", "Resistance Bands"],
               ["weightedVest", "Weighted Vest"],
               ["plyoBox", "Plyo Box"],
-              ["medicineBall", "Medicine Ball"],
             ] as const
           ).map(([key, label]) => (
             <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
@@ -1670,13 +1735,19 @@ function ProfileEditor({
         </label>
       </ProfileSection>
 
+      {savedFlash && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-success text-white text-sm font-medium shadow-lg">
+          Profile saved
+        </div>
+      )}
       <div className="sticky bottom-0 pt-4 pb-2 bg-background/95 backdrop-blur border-t border-border -mx-1 px-1 z-10">
         <button
           type="button"
           onClick={handleSave}
-          className="w-full py-3.5 bg-accent hover:opacity-90 active:scale-[0.99] text-white rounded-xl font-semibold text-base shadow-lg"
+          disabled={saving}
+          className="w-full py-3.5 bg-accent hover:opacity-90 active:scale-[0.99] disabled:opacity-70 text-white rounded-xl font-semibold text-base shadow-lg"
         >
-          Save profile
+          {saving ? "Saving…" : savedFlash ? "Saved ✓" : "Save profile"}
         </button>
       </div>
     </div>
