@@ -134,3 +134,57 @@ export function clearAllData() {
   localStorage.removeItem(PLAN_KEY);
   localStorage.removeItem(WORKOUTS_KEY);
 }
+
+
+/** Attempt Supabase upsert. Returns true if cloud write succeeded. */
+export async function saveProfileCloud(
+  userId: string,
+  profile: AthleteProfile,
+  supabaseClient: { from: (t: string) => any }
+): Promise<boolean> {
+  try {
+    const { error } = await supabaseClient.from("profiles").upsert({
+      id: userId,
+      data: profile,
+      updated_at: new Date().toISOString(),
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadProfileCloud(
+  userId: string,
+  supabaseClient: { from: (t: string) => any }
+): Promise<AthleteProfile | null> {
+  try {
+    const { data, error } = await supabaseClient
+      .from("profiles")
+      .select("data")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !data?.data) return null;
+    return data.data as AthleteProfile;
+  } catch {
+    return null;
+  }
+}
+
+export async function savePlanCloud(
+  userId: string,
+  plan: TrainingPlan,
+  supabaseClient: { from: (t: string) => any }
+): Promise<boolean> {
+  try {
+    const { error } = await supabaseClient.from("training_plans").upsert({
+      id: plan.id,
+      user_id: userId,
+      data: plan,
+      updated_at: new Date().toISOString(),
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}

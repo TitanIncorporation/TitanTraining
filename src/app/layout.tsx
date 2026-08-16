@@ -13,6 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  icons: { icon: "/favicon.svg" },
   title: "Titan Training",
   description: "Intelligent personal training plans for runners and strength athletes",
 };

@@ -105,7 +105,7 @@ export default function TitanTraining() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load from localStorage on mount
+  // Load local first; then merge/prefer cloud profile if logged in
   useEffect(() => {
     const p = loadProfile();
     const pl = loadPlan();
@@ -113,6 +113,38 @@ export default function TitanTraining() {
     if (p) setProfile(p);
     if (pl) setPlan(pl);
     setWorkouts(w);
+
+    (async () => {
+      try {
+        const { data: { user: u } } = await supabase.auth.getUser();
+        if (!u) return;
+        const { data } = await supabase.from("profiles").select("data").eq("id", u.id).maybeSingle();
+        if (data?.data) {
+          const cloud = data.data as AthleteProfile;
+          const localUpdated = p?.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+          const cloudUpdated = cloud.updatedAt ? new Date(cloud.updatedAt).getTime() : 0;
+          if (!p || cloudUpdated >= localUpdated) {
+            setProfile(cloud);
+            saveProfile(cloud);
+          }
+        }
+        const { data: planRows } = await supabase
+          .from("training_plans")
+          .select("data")
+          .eq("user_id", u.id)
+          .order("updated_at", { ascending: false })
+          .limit(1);
+        if (planRows?.[0]?.data) {
+          const cloudPlan = planRows[0].data as TrainingPlan;
+          if (!pl || (cloudPlan.generatedAt && (!pl.generatedAt || cloudPlan.generatedAt >= pl.generatedAt))) {
+            setPlan(cloudPlan);
+            savePlan(cloudPlan);
+          }
+        }
+      } catch (e) {
+        console.warn("Cloud load skipped", e);
+      }
+    })();
   }, []);
 
   const handleLogout = async () => {
@@ -158,11 +190,24 @@ export default function TitanTraining() {
   const handleGeneratePlan = () => {
     if (!profile) return;
     setGenerating(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       // Pass existing plan so regeneration keeps completed history & continues forward
       const newPlan = generateTrainingPlan(profile, 4, plan || undefined);
       setPlan(newPlan);
       savePlan(newPlan);
+      try {
+        const { data: { user: u } } = await supabase.auth.getUser();
+        if (u) {
+          await supabase.from("training_plans").upsert({
+            id: newPlan.id,
+            user_id: u.id,
+            data: newPlan,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        console.warn("Cloud plan save skipped", e);
+      }
       // Monthly longest-run refresh (1st of month): from completed run workouts
       try {
         const now = new Date();
@@ -389,9 +434,15 @@ function Dashboard({
 
       {/* Progress snapshot (merged from old Progress tab) */}
       {plan && (
-        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
-          <h3 className="font-semibold">Progress</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+        <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+          <h3 className="font-semibold">Progress & trajectory</h3>
+          <div className="h-2 bg-background rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-all"
+              style={{ width: `${totalPlanned ? Math.round((completedCount / totalPlanned) * 100) : 0}%` }}
+            />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div>
               <p className="text-xs text-muted uppercase tracking-wide">Completion</p>
               <p className="text-lg font-semibold mt-0.5">
@@ -399,19 +450,26 @@ function Dashboard({
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted uppercase tracking-wide">Done / Planned</p>
-              <p className="text-lg font-semibold mt-0.5">{completedCount} / {totalPlanned}</p>
+              <p className="text-xs text-muted uppercase tracking-wide">Sessions</p>
+              <p className="text-lg font-semibold mt-0.5">{completedCount}/{totalPlanned}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted uppercase tracking-wide">Planned load</p>
+              <p className="text-lg font-semibold mt-0.5">
+                {Math.round(plan.workouts.reduce((s, w) => s + (w.plannedDurationMin || 0), 0) / 60)}h
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted uppercase tracking-wide">Block</p>
-              <p className="text-lg font-semibold mt-0.5 truncate">{plan.name}</p>
+              <p className="text-sm font-semibold mt-0.5 truncate">{plan.name}</p>
             </div>
           </div>
-          {profile.goals.filter((g) => g.priority === 5).length > 0 && (
-            <p className="text-xs text-muted">
-              Focus: {profile.goals.filter((g) => g.priority === 5).map((g) => g.title).join(", ")}
-            </p>
-          )}
+          <p className="text-xs text-muted leading-relaxed">
+            Consistency beats perfection. Mark sessions done so the next update keeps history and adapts load.
+            {profile.goals.filter((g) => g.priority === 5).length > 0
+              ? ` Top focus: ${profile.goals.filter((g) => g.priority === 5).map((g) => g.title).join(", ")}.`
+              : ""}
+          </p>
         </div>
       )}
 
@@ -1227,7 +1285,7 @@ function ProfileEditor({
           </div>
           <div className="mt-3 pt-3 border-t border-border">
             <p className="text-xs text-muted mb-2">
-              Approx flat paces by zone (estimated). Calibrate with a race time for accuracy — HR alone cannot fix exact pace.
+              Approx flat paces by zone (always /km, mm:ss). Calibrate with a race goal pace for accuracy.
             </p>
             <div className="grid grid-cols-5 gap-1 text-[10px] sm:text-xs text-center">
               {(["z1","z2","z3","z4","z5"] as const).map((z) => {
@@ -1561,10 +1619,12 @@ function ProfileEditor({
                 type="number"
                 step="0.1"
                 className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="Pace (mm:ss /km)"
+                placeholder="3:56"
+                title="Pace always per km, format mm:ss e.g. 3:56"
                 value={newGoalPace}
                 onChange={(e) => setNewGoalPace(e.target.value)}
               />
+              <p className="text-[10px] text-muted col-span-3 -mt-1">Pace is always min/km as mm:ss (e.g. 3:56)</p>
             </div>
           )}
           {newGoalType === "trail_race" && (

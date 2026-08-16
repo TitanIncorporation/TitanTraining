@@ -264,56 +264,55 @@ Finish tired but not broken.`,
         const hasKB = profile.equipment.kettlebells;
         const hasBench = profile.equipment.bench;
         const hasPullup = profile.equipment.pullUpBar;
+        const useHypertrophy = approaches.includes("hypertrophy");
+        const useStrength = approaches.includes("strength");
+        const hardSets = useHeavyDuty ? 1 : useHypertrophy ? 3 : useStrength ? 4 : 2;
+        const repGuide = useHeavyDuty ? "6–10" : useHypertrophy ? "8–12" : useStrength ? "3–6" : "6–12";
 
         let exercises: { name: string; sets: number; reps: string; notes?: string }[] = [];
         let title = "";
         let description = "";
 
         if (isUpperFocus) {
-          title = focusChest || focusArms ? "Upper Body – Priority Focus" : "Upper Body – High Intensity";
+          title = focusChest || focusArms ? "Upper Body – Priority Focus" : "Upper Body Strength";
           description = useHeavyDuty
-            ? `Heavy Duty style (from your Baseline approach).
-Warm-up thoroughly, then 1 hard working set per exercise (near technical failure).
-Rest 2–4 minutes. Progressive overload.
-${focusChest ? "Chest emphasized." : ""} ${focusArms ? "Arms emphasized." : ""}`.trim()
-            : `Strength session scaled to your Baseline.
-Warm-up, then quality working sets. Progressive overload.
-${focusChest ? "Chest emphasized." : ""} ${focusArms ? "Arms emphasized." : ""}`.trim();
+            ? `Heavy Duty (Baseline): thorough warm-up, then ${hardSets} hard set(s) per movement near technical failure. Rest 2–4 min. Progressive overload. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}`.trim()
+            : useHypertrophy
+              ? `Hypertrophy (Baseline): ${hardSets} working sets in the ${repGuide} range, controlled tempo, 60–90s rest on isolation. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}`.trim()
+              : `Strength-focused: ${hardSets} sets @ ${repGuide}. Full recovery between heavy sets. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}`.trim();
 
           exercises = [
             {
               name: hasBarbell && hasBench ? "Incline Barbell Press" : hasDB ? "Incline Dumbbell Press" : "Incline Push-up variation",
-              sets: 1,
-              reps: "6–10",
-              notes: "1 hard working set after warm-up.",
+              sets: hardSets,
+              reps: repGuide,
+              notes: useHeavyDuty ? "Warm-up then 1 hard set." : "Chest emphasis if selected.",
             },
             {
               name: hasBarbell && hasBench ? "Flat Bench Press or Weighted Dip" : hasDB ? "Flat Dumbbell Press" : "Push-up variation",
-              sets: 1,
-              reps: "6–10",
-              notes: "1 hard set.",
+              sets: hardSets,
+              reps: repGuide,
             },
             {
               name: hasPullup ? "Pull-up or Chin-up" : hasBarbell ? "Barbell Row" : "Dumbbell / Band Row",
-              sets: 1,
-              reps: "6–10",
-              notes: "Vertical or horizontal pull. 1 hard set.",
+              sets: hardSets,
+              reps: repGuide,
             },
             {
               name: hasDB || hasBarbell ? "Overhead Press" : "Pike Push-up",
-              sets: 1,
-              reps: "6–10",
+              sets: Math.max(1, hardSets - (useHeavyDuty ? 0 : 1)),
+              reps: repGuide,
             },
             {
               name: hasDB || hasBarbell ? "Biceps Curl (barbell or DB)" : "Band Curl",
-              sets: 1,
-              reps: "8–12",
+              sets: focusArms ? hardSets : Math.max(1, hardSets - 1),
+              reps: useHypertrophy ? "10–15" : "8–12",
               notes: "Direct arm work.",
             },
             {
               name: hasDB || hasBarbell ? "Triceps Extension or Close-grip work" : "Diamond Push-up",
-              sets: 1,
-              reps: "8–12",
+              sets: focusArms ? hardSets : Math.max(1, hardSets - 1),
+              reps: useHypertrophy ? "10–15" : "8–12",
               notes: "Direct arm work.",
             },
           ];
@@ -413,6 +412,6 @@ Keep lower-body work controlled so it does not compromise the next long run.
     },
     workouts,
     weeklyStructure: `Polarized running (≥80% easy). Strength on Heavy Duty / low-volume principles. Deload in final week. Scaled to ${exp} level and ~${hours.toFixed(1)}h available.`,
-    notes: `${previousPlan ? "Updated from Baseline + history." : "From Baseline."} Focus: ${goalSummary || "general"}. ${runDays} run / ${strengthDays} strength sessions per week · ${approaches[0] || "strength"} · ${trainingDays} days available.`,
+    notes: `${previousPlan ? "Updated from Baseline + completed history." : "Built from your Baseline."} Priority: ${goalSummary || "general development"}. Structure: ~${runDays} run + ${strengthDays} strength sessions/week (${approaches.join("/") || "default"} approach), polarized running (≥80% easy), deload in final week. Available ~${hours.toFixed(1)}h across ${trainingDays} days.`,
   };
 }
