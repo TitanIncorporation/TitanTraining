@@ -5,6 +5,53 @@ function uid() {
   return Math.random().toString(36).slice(2, 11);
 }
 
+function labelApproach(code: string): string {
+  const map: Record<string, string> = {
+    heavy_duty: "Heavy Duty",
+    hypertrophy: "Hypertrophy",
+    strength: "Strength",
+    functional: "Functional Training",
+    mentzer: "Heavy Duty",
+    full_body: "Full body",
+    upper_chest: "Chest",
+    chest: "Chest",
+    arms: "Arms",
+    back: "Back",
+    shoulders: "Shoulders",
+    legs: "Legs",
+    general: "Full body",
+  };
+  if (map[code]) return map[code];
+  // humanize snake_case / kebab
+  return code
+    .replace(/[_-]+/g, " ")
+    .replace(/\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+/** Parse free-text like "Heavy Duty for upper body, Hypertrophy for lower" */
+function parseCustomApproach(text: string | undefined | null): {
+  upper?: "heavy_duty" | "hypertrophy" | "strength" | "functional";
+  lower?: "heavy_duty" | "hypertrophy" | "strength" | "functional";
+  raw?: string;
+} {
+  if (!text || !text.trim()) return {};
+  const t = text.toLowerCase();
+  const detect = (chunk: string) => {
+    if (/heavy\s*duty|mentzer|hit/.test(chunk)) return "heavy_duty" as const;
+    if (/hypertrophy|hyper/.test(chunk)) return "hypertrophy" as const;
+    if (/functional/.test(chunk)) return "functional" as const;
+    if (/strength|power/.test(chunk)) return "strength" as const;
+    return undefined;
+  };
+  const upperChunk = t.split(/lower/)[0] || t;
+  const lowerChunk = t.includes("lower") ? t.split(/lower/)[1] || "" : t;
+  const upper = /upper/.test(t) ? detect(upperChunk) : detect(t);
+  const lower = /lower/.test(t) ? detect("lower " + lowerChunk) : detect(t);
+  return { upper, lower, raw: text.trim() };
+}
+
+
 function createWorkout(
   date: string,
   type: WorkoutType,
@@ -94,9 +141,19 @@ export function generateTrainingPlan(
     "intermediate";
   const topGoals = highestPriorityGoals(profile.goals);
   const approaches = profile.strengthBaseline?.trainingApproaches || ["heavy_duty"];
+  const approachOther = (profile.strengthBaseline as any)?.trainingApproachOther as string | undefined;
+  const customSplit = parseCustomApproach(approachOther);
   const useHeavyDuty =
-    approaches.includes("heavy_duty") || approaches.includes("mentzer" as any);
+    approaches.includes("heavy_duty") ||
+    approaches.includes("mentzer" as any) ||
+    customSplit.upper === "heavy_duty" ||
+    customSplit.lower === "heavy_duty";
   const physique = profile.strengthBaseline?.physiquePriorities || ["general"];
+  const approachLabels = [
+    ...approaches.map(labelApproach),
+    ...(approachOther ? [approachOther.trim()] : []),
+  ].filter(Boolean);
+  const physiqueLabels = physique.map(labelApproach);
   const focusChest = physique.includes("chest") || physique.includes("upper_chest");
   const focusArms = physique.includes("arms");
 
@@ -259,10 +316,30 @@ Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
         const hasKB = profile.equipment.kettlebells;
         const hasBench = profile.equipment.bench;
         const hasPullup = profile.equipment.pullUpBar;
-        const useHypertrophy = approaches.includes("hypertrophy");
-        const useStrength = approaches.includes("strength");
-        const hardSets = useHeavyDuty ? 1 : useHypertrophy ? 3 : useStrength ? 4 : 2;
-        const repGuide = useHeavyDuty ? "6–10" : useHypertrophy ? "8–12" : useStrength ? "3–6" : "6–12";
+        // Body-region approach: custom text can set upper vs lower differently
+        const regionApproach = isUpperFocus
+          ? customSplit.upper ||
+            (approaches.includes("heavy_duty")
+              ? "heavy_duty"
+              : approaches.includes("hypertrophy")
+                ? "hypertrophy"
+                : approaches.includes("strength")
+                  ? "strength"
+                  : approaches[0])
+          : customSplit.lower ||
+            (approaches.includes("hypertrophy")
+              ? "hypertrophy"
+              : approaches.includes("heavy_duty")
+                ? "heavy_duty"
+                : approaches.includes("strength")
+                  ? "strength"
+                  : approaches[0]);
+        const useHeavyDutyRegion = regionApproach === "heavy_duty" || regionApproach === "mentzer";
+        const useHypertrophy = regionApproach === "hypertrophy" || approaches.includes("hypertrophy") && !useHeavyDutyRegion;
+        const useStrength = regionApproach === "strength";
+        const hardSets = useHeavyDutyRegion ? 1 : useHypertrophy ? 3 : useStrength ? 4 : 2;
+        const repGuide = useHeavyDutyRegion ? "6–10" : useHypertrophy ? "8–12" : useStrength ? "3–6" : "6–12";
+        const regionLabel = labelApproach(String(regionApproach || "strength"));
 
         let exercises: { name: string; sets: number; reps: string; notes?: string }[] = [];
         let title = "";
@@ -270,18 +347,18 @@ Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
 
         if (isUpperFocus) {
           title = focusChest || focusArms ? "Upper Body – Priority Focus" : "Upper Body Strength";
-          description = useHeavyDuty
-            ? `Heavy Duty (Baseline): thorough warm-up, then ${hardSets} hard set(s) per movement near technical failure. Rest 2–4 min. Progressive overload. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}`.trim()
+          description = useHeavyDutyRegion
+            ? `${regionLabel} (upper): warm-up, then ${hardSets} hard set(s) near technical failure. Rest 2–4 min. Progressive overload. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`.trim()
             : useHypertrophy
-              ? `Hypertrophy (Baseline): ${hardSets} working sets in the ${repGuide} range, controlled tempo, 60–90s rest on isolation. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}`.trim()
-              : `Strength-focused: ${hardSets} sets @ ${repGuide}. Full recovery between heavy sets. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}`.trim();
+              ? `${regionLabel} (upper): ${hardSets} sets @ ${repGuide}, controlled tempo. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`.trim()
+              : `${regionLabel} (upper): ${hardSets} sets @ ${repGuide}. ${focusChest ? "Chest priority." : ""} ${focusArms ? "Arms priority." : ""}${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`.trim();
 
           exercises = [
             {
               name: hasBarbell && hasBench ? "Incline Barbell Press" : hasDB ? "Incline Dumbbell Press" : "Incline Push-up variation",
               sets: hardSets,
               reps: repGuide,
-              notes: useHeavyDuty ? "Warm-up then 1 hard set." : "Chest emphasis if selected.",
+              notes: useHeavyDutyRegion ? "Warm-up then 1 hard set." : "Chest emphasis if selected.",
             },
             {
               name: hasBarbell && hasBench ? "Flat Bench Press or Weighted Dip" : hasDB ? "Flat Dumbbell Press" : "Push-up variation",
@@ -312,10 +389,10 @@ Optional late pick-ups 3×20–30s if good. Finish tired, not broken.`,
             },
           ];
         } else {
-          title = "Full Body / Lower Emphasis – High Intensity";
-          description = `High-intensity, low-volume approach.
-Keep lower-body work controlled so it does not compromise the next long run.
-1 hard working set per exercise after warm-up.`;
+          title = `Lower emphasis – ${regionLabel}`;
+          description = useHeavyDutyRegion
+            ? `${regionLabel} (lower): 1 hard set per lift after warm-up. Protect legs for long run days.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`
+            : `${regionLabel} (lower): ${hardSets} sets @ ${repGuide}. Controlled eccentric; leave 1–2 RIR if long run is next day.${customSplit.raw ? ` Custom: ${customSplit.raw}.` : ""}`;
 
           exercises = [
             {
@@ -406,7 +483,7 @@ Keep lower-body work controlled so it does not compromise the next long run.
       goals: profile.goals,
     },
     workouts,
-    weeklyStructure: `${isRunner ? `${runDays}× run (mostly Z2 + 1 quality + long)` : "No run"}${doesStrength ? ` · ${strengthDays}× strength (${approaches.join("/") || "default"})` : ""} · deload week ${weeks} · ${exp} · ~${hours.toFixed(1)}h/wk`,
+    weeklyStructure: `${isRunner ? `${runDays}× run (mostly Z2 + 1 quality + long)` : "No run"}${doesStrength ? ` · ${strengthDays}× strength (${approachLabels.join(", ") || "default"})` : ""} · deload week ${weeks} · ${labelApproach(String(exp))} · ~${hours.toFixed(1)}h/wk`,
     notes: [
       previousPlan ? "Update: kept completed past sessions; forward block rebuilt from Baseline." : "New block from Baseline only (no hard-coded athlete defaults).",
       `Goal focus: ${goalSummary || "general development"}.`,
@@ -414,7 +491,7 @@ Keep lower-body work controlled so it does not compromise the next long run.
         ? `Running: ${runDays} days/week · easy Z2 base · 1 quality (tempo or intervals) · long run progressing from ~${Math.round(longBase * 0.85)} toward ~${longBase} min · weekly volume anchor ${weeklyKm || "n/a"} km · surface ${primaryIsTrail ? "trail bias" : "road"}.`
         : "Running: not selected in Baseline.",
       doesStrength
-        ? `Strength: ${strengthDays} day(s)/week · approach ${approaches.join(", ") || "default"} · physique ${physique.join(", ") || "full_body"} · equipment-constrained · lower body managed around long-run days.`
+        ? `Strength: ${strengthDays} day(s)/week · approach ${approachLabels.join("; ") || "default"} · physique ${physiqueLabels.join(", ") || "Full body"} · equipment-constrained · lower body managed around long-run days.`
         : "Strength: not selected.",
       `Load budget: ~${hours.toFixed(1)} h/week across ${trainingDays} training days. Final week = deload (~25% less intensity/volume).`,
     ].join(" "),

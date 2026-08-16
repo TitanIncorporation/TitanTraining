@@ -254,8 +254,8 @@ export default function TitanTraining() {
       <aside className="w-full md:w-64 bg-card border-b md:border-b-0 md:border-r border-border flex-shrink-0">
         <div className="p-5 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center overflow-hidden">
-              <img src="/favicon.svg" alt="Titan" className="w-8 h-8" />
+            <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center">
+              <Mountain className="w-5 h-5 text-white" />
             </div>
             <div>
               <h1 className="font-semibold text-lg tracking-tight">Titan Training</h1>
@@ -1284,7 +1284,7 @@ function ProfileEditor({
           </div>
           <div className="mt-3 pt-3 border-t border-border">
             <p className="text-xs text-muted mb-2">
-              Approx flat paces by zone (always /km, mm:ss). Calibrate with a race goal pace for accuracy.
+              Approx flat paces by zone — Time (mm:ss) per km. Calibrate with a race goal for accuracy.
             </p>
             <div className="grid grid-cols-5 gap-1 text-[10px] sm:text-xs text-center">
               {(["z1","z2","z3","z4","z5"] as const).map((z) => {
@@ -1601,31 +1601,34 @@ function ProfileEditor({
           {/* Running targets */}
           {newGoalType === "race" && (
             <div className="space-y-1">
-            <p className="text-[10px] text-muted">Distance (km) · Time (hh:mm) · Pace per km (mm:ss only — example format 3:56, field stays empty until you type)</p>
+            <p className="text-[10px] text-muted">Distance (km) · Time (hh:mm) · Pace/km (mm:ss)</p>
             <div className="grid grid-cols-3 gap-2">
-              <input
-                type="number"
-                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="Distance (km)"
-                value={newGoalDistance}
-                onChange={(e) => setNewGoalDistance(e.target.value)}
-              />
-              <input
-                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="Time (hh:mm)"
-                value={newGoalTime}
-                onChange={(e) => setNewGoalTime(e.target.value)}
-              />
-              <input
-                type="number"
-                step="0.1"
-                className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
-                placeholder="mm:ss"
-                aria-label="Target pace per km as minutes:seconds"
-                inputMode="text"
-                value={newGoalPace}
-                onChange={(e) => setNewGoalPace(e.target.value)}
-              />
+              <div>
+                <input
+                  type="number"
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Distance (km)"
+                  value={newGoalDistance}
+                  onChange={(e) => setNewGoalDistance(e.target.value)}
+                />
+              </div>
+              <div>
+                <input
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Time (hh:mm)"
+                  value={newGoalTime}
+                  onChange={(e) => setNewGoalTime(e.target.value)}
+                />
+              </div>
+              <div>
+                <input
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Pace/km (mm:ss)"
+                  inputMode="text"
+                  value={newGoalPace}
+                  onChange={(e) => setNewGoalPace(e.target.value)}
+                />
+              </div>
             </div>
             </div>
           )}
